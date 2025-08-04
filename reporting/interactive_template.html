@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Interactive Fairness Analysis Report</title>
+    <title>Fairness Analysis Report</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
         .container { background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -39,6 +39,69 @@
         .feature-overview { background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0; }
         .plot-container { text-align: center; margin: 20px 0; }
         .plot-container img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px; }
+        
+        /* Overall Performance Table Styles */
+        .overall-performance-table { 
+            border-collapse: collapse; 
+            width: 100%; 
+            margin: 20px 0; 
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .overall-performance-table th { 
+            background-color: #2196F3; 
+            color: white; 
+            padding: 20px; 
+            text-align: center; 
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .overall-performance-table td { 
+            padding: 25px; 
+            text-align: center; 
+            font-size: 28px; 
+            font-weight: bold; 
+            color: #2196F3;
+            border-right: 1px solid #e0e0e0;
+        }
+        .overall-performance-table td:last-child { 
+            border-right: none; 
+        }
+        
+        /* Stratified Performance Table Styles */
+        .stratified-performance-table { 
+            border-collapse: collapse; 
+            width: 100%; 
+            margin: 20px 0; 
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stratified-performance-table th { 
+            background-color: #4CAF50; 
+            color: white; 
+            padding: 15px; 
+            text-align: center; 
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .stratified-performance-table td { 
+            padding: 20px; 
+            text-align: center; 
+            font-size: 18px; 
+            font-weight: bold; 
+            color: #4CAF50;
+        }
+        .stratified-performance-table tr:nth-child(even) { 
+            background-color: #f9f9f9; 
+        }
+        .stratified-performance-table .group-name { 
+            font-weight: bold; 
+            color: #333; 
+        }
         
         /* Tooltip styles */
         .tooltip {
@@ -156,7 +219,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>Interactive Fairness Analysis Report</h1>
+        <h1>Fairness Analysis Report</h1>
         <p class="timestamp">Generated on: {{ timestamp }}</p>
         
         <div class="feature-selector">
@@ -169,13 +232,22 @@
         </div>
         
         <div class="summary-box">
-            <h2>Executive Summary</h2>
-            <p>This report analyzes fairness across multiple sensitive features: <strong>{{ features|join(', ') }}</strong>.</p>
-            <p>Currently viewing: <strong class="current-feature-name">{{ features[0] }}</strong></p>
-            <ul>
-                <li>Total Samples: <span class="metric-value">{{ total_samples }}</span></li>
-                <li>Number of Sensitive Features Analyzed: <span class="metric-value">{{ num_features }}</span></li>
-            </ul>
+            <h2>Overall Performance</h2>
+            <p>Model performance across the entire dataset without stratification by sensitive features.</p>
+            <table class="overall-performance-table">
+                <tr>
+                    <th>Total Sample Size</th>
+                    <th>Case Count<br><small>(True Label = 1)</small></th>
+                    <th>Overall Accuracy</th>
+                    <th>Overall ROC-AUC</th>
+                </tr>
+                <tr>
+                    <td>{{ overall_performance.total_samples }}</td>
+                    <td>{{ overall_performance.case_count }} ({{ "%.1f"|format(overall_performance.case_percentage) }}%)</td>
+                    <td>{{ "%.3f"|format(overall_performance.overall_accuracy) }}</td>
+                    <td>{{ "%.3f"|format(overall_performance.overall_auc) if overall_performance.overall_auc == overall_performance.overall_auc else "N/A" }}</td>
+                </tr>
+            </table>
         </div>
         
         {% for feature in features %}
@@ -187,6 +259,26 @@
                     <li>Number of Groups: <span class="metric-value">{{ feature_stats[feature].num_groups }}</span></li>
                     <li>Overall Fairness Score: <span class="metric-value">{{ feature_stats[feature].fairness_score }}%</span></li>
                 </ul>
+                
+                <h3>Performance by {{ feature|title }}</h3>
+                <table class="stratified-performance-table">
+                    <tr>
+                        <th>Group</th>
+                        <th>Sample Size</th>
+                        <th>Case Count<br><small>(True Label = 1)</small></th>
+                        <th>Accuracy</th>
+                        <th>ROC-AUC</th>
+                    </tr>
+                    {% for group, metrics in model_performance[feature].stratified_performance.items() %}
+                    <tr>
+                        <td class="group-name">{{ group }}</td>
+                        <td>{{ metrics['sample_size'] }}</td>
+                        <td>{{ metrics['case_count'] }} ({{ "%.1f"|format(metrics['case_percentage']) }}%)</td>
+                        <td>{{ "%.3f"|format(metrics['accuracy']) }}</td>
+                        <td>{{ "%.3f"|format(metrics['auc']) if metrics['auc'] == metrics['auc'] else "N/A" }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
             </div>
             
             <div class="tab-container">
@@ -209,15 +301,17 @@
                         <th><span class="tooltip">AUC-ROC<span class="tooltiptext">A measure of how well the model can distinguish between positive and negative cases. Values closer to 1.0 indicate better performance.</span></span></th>
                     </tr>
                     {% for group, metrics in model_performance[feature].items() %}
+                    {% if group != 'stratified_performance' %}
                     <tr>
                         <td><b>{{ group }}</b></td>
-                        <td>{{ metrics.count }}</td>
-                        <td>{{ "%.3f"|format(metrics.accuracy) }}</td>
-                        <td>{{ "%.3f"|format(metrics.precision) }}</td>
-                        <td>{{ "%.3f"|format(metrics.recall) }}</td>
-                        <td>{{ "%.3f"|format(metrics.f1_score) }}</td>
-                        <td>{{ "%.3f"|format(metrics.auc) if metrics.auc == metrics.auc else "N/A" }}</td>
+                        <td>{{ metrics['count'] }}</td>
+                        <td>{{ "%.3f"|format(metrics['accuracy']) }}</td>
+                        <td>{{ "%.3f"|format(metrics['precision']) }}</td>
+                        <td>{{ "%.3f"|format(metrics['recall']) }}</td>
+                        <td>{{ "%.3f"|format(metrics['f1_score']) }}</td>
+                        <td>{{ "%.3f"|format(metrics['auc']) if metrics['auc'] == metrics['auc'] else "N/A" }}</td>
                     </tr>
+                    {% endif %}
                     {% endfor %}
                 </table>
             </div>
