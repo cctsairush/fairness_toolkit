@@ -53,6 +53,9 @@ class InteractiveFairnessReporter:
             y_true, y_pred, sensitive_features_dict, y_prob, privileged_groups
         )
         
+        # Calculate overall performance metrics (not stratified by any sensitive feature)
+        overall_performance = self._calculate_overall_performance(y_true, y_pred, y_prob)
+        
         # Process each feature
         features = list(sensitive_features_dict.keys())
         feature_summaries = {}
@@ -112,6 +115,7 @@ class InteractiveFairnessReporter:
             'total_samples': len(y_true),
             'num_features': len(features),
             'features': features,
+            'overall_performance': overall_performance,
             'feature_summaries': feature_summaries,
             'feature_stats': feature_stats,
             'model_performance': model_performance,
@@ -224,6 +228,7 @@ class InteractiveFairnessReporter:
         """Calculate model performance metrics by group."""
         unique_groups = sorted(np.unique(sensitive_features))
         performance_data = {}
+        stratified_performance = {}
         
         for group in unique_groups:
             group_mask = sensitive_features == group
@@ -250,7 +255,21 @@ class InteractiveFairnessReporter:
                 group_metrics['auc'] = np.nan
             
             performance_data[str(group)] = group_metrics
+            
+            # Also calculate stratified performance for the new table format
+            group_case_count = int(np.sum(y_true_group))
+            group_sample_size = len(y_true_group)
+            group_case_percentage = (group_case_count / group_sample_size) * 100 if group_sample_size > 0 else 0
+            
+            stratified_performance[str(group)] = {
+                'sample_size': group_sample_size,
+                'case_count': group_case_count,
+                'case_percentage': group_case_percentage,
+                'accuracy': accuracy_score(y_true_group, y_pred_group),
+                'auc': group_metrics['auc']
+            }
         
+        performance_data['stratified_performance'] = stratified_performance
         return performance_data
     
     def _generate_performance_plots(self, y_true: np.ndarray, y_pred: np.ndarray, 
@@ -357,6 +376,28 @@ class InteractiveFairnessReporter:
             'high': 'danger'
         }
         return mapping.get(severity, 'warning')
+    
+    def _calculate_overall_performance(self, y_true: np.ndarray, y_pred: np.ndarray, 
+                                     y_prob: Optional[np.ndarray] = None) -> Dict:
+        """Calculate overall performance metrics without stratification."""
+        total_samples = len(y_true)
+        case_count = np.sum(y_true)  # Count of true label = 1
+        case_percentage = (case_count / total_samples) * 100 if total_samples > 0 else 0
+        overall_accuracy = accuracy_score(y_true, y_pred)
+        
+        # Calculate AUC if probabilities are available
+        if y_prob is not None and len(np.unique(y_true)) > 1:
+            overall_auc = roc_auc_score(y_true, y_prob)
+        else:
+            overall_auc = np.nan
+        
+        return {
+            'total_samples': total_samples,
+            'case_count': int(case_count),
+            'case_percentage': case_percentage,
+            'overall_accuracy': overall_accuracy,
+            'overall_auc': overall_auc
+        }
 
 
 def generate_interactive_fairness_report(y_true: np.ndarray, 
