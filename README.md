@@ -19,7 +19,7 @@ pip install fairness-toolkit
 Or install from source:
 
 ```bash
-git clone https://github.com/yourusername/fairness-toolkit.git
+git clone https://github.com/cctsairush/fairness-toolkit.git
 cd fairness-toolkit
 pip install -e .
 ```
@@ -248,14 +248,13 @@ If you use this package in your research, please cite:
 ```bibtex
 @software{fairness_toolkit,
   title = {Fairness Toolkit: A Python Package for Evaluating ML Fairness},
-  author = {Your Name},
+  author = {Jonathan Tsai},
   year = {2024},
-  url = {https://github.com/yourusername/fairness-toolkit}
+  url = {https://github.com/cctsairush/fairness-toolkit}
 }
 ```
 
 ## Support
 
-- Documentation: [https://fairness-toolkit.readthedocs.io](https://fairness-toolkit.readthedocs.io)
-- Issues: [GitHub Issues](https://github.com/yourusername/fairness-toolkit/issues)
-- Discussions: [GitHub Discussions](https://github.com/yourusername/fairness-toolkit/discussions)
+- Issues: [GitHub Issues](https://github.com/cctsairush/fairness-toolkit/issues)
+- Discussions: [GitHub Discussions](https://github.com/cctsairush/fairness-toolkit/discussions)

@@ -6,12 +6,12 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     name="fairness-toolkit",
     version="0.1.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Jonathan Tsai",
+    author_email="chuan-ching_tsai@rush.edu",
     description="A Python package for evaluating and improving fairness in binary classification models",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/fairness-toolkit",
+    url="https://github.com/cctsairush/fairness_toolkit",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
