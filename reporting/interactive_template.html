@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Interactive Fairness Analysis Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
+        .container { background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 3px solid #4CAF50; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        h3 { color: #666; }
+        .metric-card { background-color: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #4CAF50; }
+        .warning { background-color: #fff3cd; border-left-color: #ffc107; }
+        .danger { background-color: #f8d7da; border-left-color: #dc3545; }
+        .success { background-color: #d4edda; border-left-color: #28a745; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #4CAF50; color: white; }
+        /* Dynamic header colors based on parent metric-card status */
+        .success th { background-color: #28a745; }
+        .warning th { background-color: #856404; }
+        .danger th { background-color: #721c24; }
+        tr:hover { background-color: #f5f5f5; }
+        .recommendation { background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #2196F3; }
+        .summary-box { background-color: #f0f0f0; padding: 20px; border-radius: 5px; margin: 20px 0; }
+        .metric-value { font-weight: bold; color: #4CAF50; }
+        .timestamp { color: #666; font-size: 0.9em; }
+        .feature-selector { background-color: #e8f5e9; padding: 20px; border-radius: 5px; margin: 20px 0; }
+        .feature-selector label { font-weight: bold; margin-right: 10px; font-size: 16px; }
+        .feature-selector select { padding: 10px 15px; border: 2px solid #4CAF50; border-radius: 4px; font-size: 16px; background-color: white; cursor: pointer; }
+        .feature-selector select:hover { background-color: #f5f5f5; }
+        .feature-content { display: none; }
+        .feature-content.active { display: block; }
+        .tab-container { background-color: #f0f0f0; padding: 10px; border-radius: 5px; margin: 20px 0; }
+        .tab-button { background-color: #ddd; border: none; padding: 10px 20px; cursor: pointer; margin-right: 5px; border-radius: 5px 5px 0 0; font-size: 14px; }
+        .tab-button:hover { background-color: #ccc; }
+        .tab-button.active { background-color: #4CAF50; color: white; }
+        .tab-content { display: none; padding: 20px; background-color: white; border-radius: 0 5px 5px 5px; }
+        .tab-content.active { display: block; }
+        .feature-overview { background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .plot-container { text-align: center; margin: 20px 0; }
+        .plot-container img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px; }
+        
+        /* Tooltip styles */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            color: inherit;
+            font-weight: inherit;
+        }
+        
+        th .tooltip {
+            color: white;
+            font-weight: bold;
+        }
+        
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 300px;
+            background-color: #333;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 10px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -150px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 14px;
+            line-height: 1.4;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+        
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+    <script>
+        function changeFeature() {
+            var selector = document.getElementById('featureSelect');
+            var selectedFeature = selector.value;
+            
+            // Hide all feature content
+            var allContent = document.getElementsByClassName('feature-content');
+            for (var i = 0; i < allContent.length; i++) {
+                allContent[i].classList.remove('active');
+            }
+            
+            // Show selected feature content
+            var selectedContent = document.getElementsByClassName('feature-' + selectedFeature);
+            for (var i = 0; i < selectedContent.length; i++) {
+                selectedContent[i].classList.add('active');
+            }
+            
+            // Update feature-specific text
+            updateFeatureSpecificText(selectedFeature);
+        }
+        
+        function updateFeatureSpecificText(feature) {
+            // Update all elements with class 'current-feature-name'
+            var elements = document.getElementsByClassName('current-feature-name');
+            for (var i = 0; i < elements.length; i++) {
+                elements[i].textContent = feature;
+            }
+        }
+        
+        function showTab(tabName, feature) {
+            // Hide all tabs for this feature
+            var tabs = document.getElementsByClassName('tab-content-' + feature);
+            for (var i = 0; i < tabs.length; i++) {
+                tabs[i].classList.remove('active');
+            }
+            
+            // Remove active class from all tab buttons for this feature
+            var buttons = document.getElementsByClassName('tab-button-' + feature);
+            for (var i = 0; i < buttons.length; i++) {
+                buttons[i].classList.remove('active');
+            }
+            
+            // Show selected tab
+            document.getElementById(tabName + '-' + feature).classList.add('active');
+            document.getElementById('btn-' + tabName + '-' + feature).classList.add('active');
+        }
+        
+        window.onload = function() {
+            changeFeature();
+            
+            // Activate first tab for each feature
+            var features = document.getElementById('featureSelect').options;
+            for (var i = 0; i < features.length; i++) {
+                var feature = features[i].value;
+                var firstTab = document.querySelector('.tab-button-' + feature);
+                if (firstTab) {
+                    firstTab.click();
+                }
+            }
+        };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Interactive Fairness Analysis Report</h1>
+        <p class="timestamp">Generated on: {{ timestamp }}</p>
+        
+        <div class="feature-selector">
+            <label for="featureSelect">Select Sensitive Feature:</label>
+            <select id="featureSelect" onchange="changeFeature()">
+                {% for feature in features %}
+                <option value="{{ feature }}">{{ feature|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="summary-box">
+            <h2>Executive Summary</h2>
+            <p>This report analyzes fairness across multiple sensitive features: <strong>{{ features|join(', ') }}</strong>.</p>
+            <p>Currently viewing: <strong class="current-feature-name">{{ features[0] }}</strong></p>
+            <ul>
+                <li>Total Samples: <span class="metric-value">{{ total_samples }}</span></li>
+                <li>Number of Sensitive Features Analyzed: <span class="metric-value">{{ num_features }}</span></li>
+            </ul>
+        </div>
+        
+        {% for feature in features %}
+        <div class="feature-content feature-{{ feature }}">
+            <div class="feature-overview">
+                <h2>Analysis for {{ feature|title }}</h2>
+                <p>{{ feature_summaries[feature] }}</p>
+                <ul>
+                    <li>Number of Groups: <span class="metric-value">{{ feature_stats[feature].num_groups }}</span></li>
+                    <li>Overall Fairness Score: <span class="metric-value">{{ feature_stats[feature].fairness_score }}%</span></li>
+                </ul>
+            </div>
+            
+            <div class="tab-container">
+                <button id="btn-performance-{{ feature }}" class="tab-button tab-button-{{ feature }}" onclick="showTab('performance', '{{ feature }}')">Model Performance</button>
+                <button id="btn-metrics-{{ feature }}" class="tab-button tab-button-{{ feature }}" onclick="showTab('metrics', '{{ feature }}')">Fairness Metrics</button>
+                <button id="btn-visualizations-{{ feature }}" class="tab-button tab-button-{{ feature }}" onclick="showTab('visualizations', '{{ feature }}')">Visualizations</button>
+                <button id="btn-recommendations-{{ feature }}" class="tab-button tab-button-{{ feature }}" onclick="showTab('recommendations', '{{ feature }}')">Recommendations</button>
+            </div>
+            
+            <div id="performance-{{ feature }}" class="tab-content tab-content-{{ feature }}">
+                <h3>Model Performance by {{ feature|title }}</h3>
+                <table>
+                    <tr>
+                        <th>Group</th>
+                        <th>Count</th>
+                        <th><span class="tooltip">Accuracy<span class="tooltiptext">The percentage of predictions that were correct. For example, if the model made 100 predictions and 85 were right, the accuracy is 85%.</span></span></th>
+                        <th><span class="tooltip">Precision<span class="tooltiptext">Of all the positive predictions the model made, how many were actually correct? High precision means fewer false alarms.</span></span></th>
+                        <th><span class="tooltip">Recall<span class="tooltiptext">Of all the actual positive cases, how many did the model correctly identify? High recall means the model catches most positive cases.</span></span></th>
+                        <th><span class="tooltip">F1-Score<span class="tooltiptext">A balanced measure that combines precision and recall into a single score. Higher F1-score means better overall performance.</span></span></th>
+                        <th><span class="tooltip">AUC-ROC<span class="tooltiptext">A measure of how well the model can distinguish between positive and negative cases. Values closer to 1.0 indicate better performance.</span></span></th>
+                    </tr>
+                    {% for group, metrics in model_performance[feature].items() %}
+                    <tr>
+                        <td><b>{{ group }}</b></td>
+                        <td>{{ metrics.count }}</td>
+                        <td>{{ "%.3f"|format(metrics.accuracy) }}</td>
+                        <td>{{ "%.3f"|format(metrics.precision) }}</td>
+                        <td>{{ "%.3f"|format(metrics.recall) }}</td>
+                        <td>{{ "%.3f"|format(metrics.f1_score) }}</td>
+                        <td>{{ "%.3f"|format(metrics.auc) if metrics.auc == metrics.auc else "N/A" }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            
+            <div id="metrics-{{ feature }}" class="tab-content tab-content-{{ feature }}">
+                <h3>Fairness Metrics for {{ feature|title }}</h3>
+                
+                <h4>1. <span class="tooltip">Demographic Parity<span class="tooltiptext">Fairness measure that requires all groups to receive positive predictions at the same rate, regardless of the actual outcomes. For example, if 50% of Group A gets approved for loans, then 50% of Group B should also get approved.</span></span></h4>
+                <div class="metric-card {{ fairness_analysis[feature].demographic_parity_status }}">
+                    <p>{{ fairness_analysis[feature].demographic_parity_interpretation }}</p>
+                    <table>
+                        <tr>
+                            <th>Group</th>
+                            <th><span class="tooltip">Positive Prediction Rate<span class="tooltiptext">The percentage of people in this group who received a positive prediction (e.g., approved, hired, recommended). Lower values mean fewer positive predictions for that group.</span></span></th>
+                            <th>Deviation from Average</th>
+                        </tr>
+                        {% for group, value in fairness_metrics[feature].demographic_parity.items() %}
+                        <tr>
+                            <td>{{ group }}</td>
+                            <td>{{ "%.3f"|format(value) }}</td>
+                            <td>{{ "%.3f"|format(fairness_analysis[feature].demographic_parity_deviations[group]) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+                
+                <h4>2. <span class="tooltip">Equal Opportunity<span class="tooltiptext">Fairness measure that ensures qualified individuals from all groups have an equal chance of receiving positive outcomes. For example, among all qualified job applicants, each group should have the same chance of being hired.</span></span></h4>
+                <div class="metric-card {{ fairness_analysis[feature].equal_opportunity_status }}">
+                    <p>{{ fairness_analysis[feature].equal_opportunity_interpretation }}</p>
+                    <table>
+                        <tr>
+                            <th>Group</th>
+                            <th><span class="tooltip">True Positive Rate<span class="tooltiptext">Among people who actually deserve a positive outcome (e.g., qualified candidates), what percentage did the model correctly identify? Higher values mean the model is better at recognizing qualified individuals from that group.</span></span></th>
+                            <th>Deviation from Average</th>
+                        </tr>
+                        {% for group, value in fairness_metrics[feature].equal_opportunity.items() %}
+                        <tr>
+                            <td>{{ group }}</td>
+                            <td>{{ "%.3f"|format(value) if value == value else "N/A" }}</td>
+                            <td>{{ "%.3f"|format(fairness_analysis[feature].equal_opportunity_deviations[group]) if fairness_analysis[feature].equal_opportunity_deviations[group] == fairness_analysis[feature].equal_opportunity_deviations[group] else "N/A" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+                
+                <h4>3. <span class="tooltip">Calibration Parity<span class="tooltiptext">Fairness measure that ensures the model's confidence is equally reliable across all groups. For example, when the model is 80% confident about a positive prediction, it should be right 80% of the time for all groups.</span></span></h4>
+                <div class="metric-card {{ fairness_analysis[feature].calibration_parity_status }}">
+                    <p>{{ fairness_analysis[feature].calibration_parity_interpretation }}</p>
+                    <table>
+                        <tr>
+                            <th>Group</th>
+                            <th><span class="tooltip">PPV (Positive Predictive Value)<span class="tooltiptext">When the model makes a positive prediction for this group, how often is it actually correct? For example, if the model approves 100 loan applications from this group, how many applicants will actually repay the loan?</span></span></th>
+                            <th><span class="tooltip">NPV (Negative Predictive Value)<span class="tooltiptext">When the model makes a negative prediction for this group, how often is it actually correct? For example, if the model rejects 100 loan applications from this group, how many would have actually defaulted?</span></span></th>
+                        </tr>
+                        {% for group, values in fairness_metrics[feature].calibration_parity.items() %}
+                        <tr>
+                            <td>{{ group }}</td>
+                            <td>{{ "%.3f"|format(values.PPV) if values.PPV == values.PPV else "N/A" }}</td>
+                            <td>{{ "%.3f"|format(values.NPV) if values.NPV == values.NPV else "N/A" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+                
+                <h4>4. <span class="tooltip">Disparate Impact<span class="tooltiptext">A legal measure of fairness that compares positive outcome rates between groups. The "80% rule" states that no group should have a positive rate less than 80% of the highest group's rate. Values between 0.8-1.25 are generally considered fair.</span></span></h4>
+                <div class="metric-card {{ fairness_analysis[feature].disparate_impact_status }}">
+                    <p>{{ fairness_analysis[feature].disparate_impact_interpretation }}</p>
+                    <table>
+                        <tr>
+                            <th>Group</th>
+                            <th><span class="tooltip">Disparate Impact Ratio<span class="tooltiptext">Compares this group's positive prediction rate to the group with the highest rate. A ratio of 1.0 means equal rates. Ratios below 0.8 may indicate discrimination against this group.</span></span></th>
+                            <th>Status</th>
+                        </tr>
+                        {% for group, value in fairness_metrics[feature].disparate_impact.items() %}
+                        <tr>
+                            <td>{{ group }}</td>
+                            <td>{{ "%.3f"|format(value) if value == value else "N/A" }}</td>
+                            <td>{{ "Fair" if 0.8 <= value <= 1.25 else "Potential Bias" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+            </div>
+            
+            <div id="visualizations-{{ feature }}" class="tab-content tab-content-{{ feature }}">
+                <h3>Visualizations for {{ feature|title }}</h3>
+                {% if performance_plots[feature] %}
+                    {% if performance_plots[feature].distributions %}
+                    <div class="plot-container">
+                        <h4>Group Distributions</h4>
+                        <img src="{{ performance_plots[feature].distributions }}" alt="Group Distributions for {{ feature }}">
+                    </div>
+                    {% endif %}
+                    
+                    {% if performance_plots[feature].confusion_matrices %}
+                    <div class="plot-container">
+                        <h4>Confusion Matrices by Group</h4>
+                        <img src="{{ performance_plots[feature].confusion_matrices }}" alt="Confusion Matrices for {{ feature }}">
+                    </div>
+                    {% endif %}
+                    
+                    {% if performance_plots[feature].dashboard %}
+                    <div class="plot-container">
+                        <h4>Fairness Dashboard</h4>
+                        <img src="{{ performance_plots[feature].dashboard }}" alt="Fairness Dashboard for {{ feature }}">
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <p>No visualizations available for this feature.</p>
+                {% endif %}
+            </div>
+            
+            <div id="recommendations-{{ feature }}" class="tab-content tab-content-{{ feature }}">
+                <h3>Recommendations for {{ feature|title }}</h3>
+                {% for recommendation in recommendations[feature] %}
+                <div class="recommendation">
+                    <h4>{{ recommendation.title }}</h4>
+                    <p>{{ recommendation.description }}</p>
+                    <ul>
+                        {% for action in recommendation.actions %}
+                        <li>{{ action }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+        
+        <h2>Technical Details</h2>
+        <div class="metric-card">
+            <h4>Metrics Definitions</h4>
+            <ul>
+                <li><strong><span class="tooltip">Demographic Parity<span class="tooltiptext">Fairness measure that requires all groups to receive positive predictions at the same rate, regardless of the actual outcomes. For example, if 50% of Group A gets approved for loans, then 50% of Group B should also get approved.</span></span>:</strong> Requires equal positive prediction rates across groups</li>
+                <li><strong><span class="tooltip">Equal Opportunity<span class="tooltiptext">Fairness measure that ensures qualified individuals from all groups have an equal chance of receiving positive outcomes. For example, among all qualified job applicants, each group should have the same chance of being hired.</span></span>:</strong> Requires equal true positive rates across groups</li>
+                <li><strong><span class="tooltip">Calibration Parity<span class="tooltiptext">Fairness measure that ensures the model's confidence is equally reliable across all groups. For example, when the model is 80% confident about a positive prediction, it should be right 80% of the time for all groups.</span></span>:</strong> Requires equal predictive values across groups</li>
+                <li><strong><span class="tooltip">Disparate Impact<span class="tooltiptext">A legal measure of fairness that compares positive outcome rates between groups. The "80% rule" states that no group should have a positive rate less than 80% of the highest group's rate. Values between 0.8-1.25 are generally considered fair.</span></span>:</strong> Ratio of positive rates between groups (0.8-1.25 is considered fair)</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
