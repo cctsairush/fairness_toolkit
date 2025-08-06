@@ -249,7 +249,7 @@ If you use this package in your research, please cite:
 @software{fairness_toolkit,
   title = {Fairness Toolkit: A Python Package for Evaluating ML Fairness},
   author = {Jonathan Tsai},
-  year = {2024},
+  year = {2025},
   url = {https://github.com/cctsairush/fairness-toolkit}
 }
 ```
