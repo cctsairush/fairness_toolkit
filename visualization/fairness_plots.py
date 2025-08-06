@@ -402,7 +402,7 @@ def create_fairness_dashboard(y_true: np.ndarray, y_pred: np.ndarray,
     fig : matplotlib.figure.Figure
     """
     fig = plt.figure(figsize=figsize)
-    gs = gridspec.GridSpec(3, 3, figure=fig, hspace=0.3, wspace=0.3)
+    gs = gridspec.GridSpec(3, 2, figure=fig, hspace=0.3, wspace=0.3)
     
     # If metrics not provided, calculate them
     if metrics is None:
@@ -417,43 +417,35 @@ def create_fairness_dashboard(y_true: np.ndarray, y_pred: np.ndarray,
     ax1.set_ylabel('Positive Prediction Rate')
     ax1.grid(True, alpha=0.3, axis='y')
     
-    # 2. Equal Opportunity
+    # 2. Disparate Impact
     ax2 = fig.add_subplot(gs[0, 1])
-    df_eo = pd.DataFrame({'Equal Opportunity (TPR)': metrics.equal_opportunity})
-    df_eo.plot(kind='bar', ax=ax2, legend=False, color='lightcoral')
-    ax2.set_title('Equal Opportunity', fontweight='bold')
-    ax2.set_ylabel('True Positive Rate')
+    df_di = pd.DataFrame({'Disparate Impact': metrics.disparate_impact})
+    df_di.plot(kind='bar', ax=ax2, legend=False, color='lightgreen')
+    ax2.axhline(y=1, color='red', linestyle='--', alpha=0.5)
+    ax2.set_title('Disparate Impact', fontweight='bold')
+    ax2.set_ylabel('Ratio')
     ax2.grid(True, alpha=0.3, axis='y')
     
-    # 3. Disparate Impact
-    ax3 = fig.add_subplot(gs[0, 2])
-    df_di = pd.DataFrame({'Disparate Impact': metrics.disparate_impact})
-    df_di.plot(kind='bar', ax=ax3, legend=False, color='lightgreen')
-    ax3.axhline(y=1, color='red', linestyle='--', alpha=0.5)
-    ax3.set_title('Disparate Impact', fontweight='bold')
-    ax3.set_ylabel('Ratio')
+    # 3. Equalized Odds
+    ax3 = fig.add_subplot(gs[1, 0])
+    eq_odds_data = pd.DataFrame(metrics.equalized_odds).T
+    eq_odds_data.plot(kind='bar', ax=ax3, width=0.8)
+    ax3.set_title('Equalized Odds (TPR and FPR)', fontweight='bold')
+    ax3.set_ylabel('Rate')
+    ax3.legend(title='Metrics')
     ax3.grid(True, alpha=0.3, axis='y')
     
-    # 4. Equalized Odds
-    ax4 = fig.add_subplot(gs[1, :2])
-    eq_odds_data = pd.DataFrame(metrics.equalized_odds).T
-    eq_odds_data.plot(kind='bar', ax=ax4, width=0.8)
-    ax4.set_title('Equalized Odds (TPR and FPR)', fontweight='bold')
-    ax4.set_ylabel('Rate')
+    # 4. Calibration Parity
+    ax4 = fig.add_subplot(gs[1, 1])
+    calib_data = pd.DataFrame(metrics.calibration_parity).T
+    calib_data.plot(kind='bar', ax=ax4, width=0.8)
+    ax4.set_title('Calibration Parity', fontweight='bold')
+    ax4.set_ylabel('Value')
     ax4.legend(title='Metrics')
     ax4.grid(True, alpha=0.3, axis='y')
     
-    # 5. Calibration Parity
-    ax5 = fig.add_subplot(gs[1, 2])
-    calib_data = pd.DataFrame(metrics.calibration_parity).T
-    calib_data.plot(kind='bar', ax=ax5, width=0.8)
-    ax5.set_title('Calibration Parity', fontweight='bold')
-    ax5.set_ylabel('Value')
-    ax5.legend(title='Metrics')
-    ax5.grid(True, alpha=0.3, axis='y')
-    
-    # 6. Summary Statistics
-    ax6 = fig.add_subplot(gs[2, :])
+    # 5. Summary Statistics
+    ax5 = fig.add_subplot(gs[2, :])
     
     # Create summary table
     summary_data = []
@@ -465,7 +457,7 @@ def create_fairness_dashboard(y_true: np.ndarray, y_pred: np.ndarray,
             'Sample Size': np.sum(sensitive_features == group),
             'Actual Positive Rate': np.mean(y_true[sensitive_features == group]),
             'Predicted Positive Rate': metrics.demographic_parity[group],
-            'TPR': metrics.equal_opportunity[group],
+            'TPR': metrics.equalized_odds[group]['TPR'],
             'FPR': metrics.equalized_odds[group]['FPR'],
             'PPV': metrics.calibration_parity[group]['PPV'],
             'Disparate Impact': metrics.disparate_impact[group]
@@ -475,7 +467,7 @@ def create_fairness_dashboard(y_true: np.ndarray, y_pred: np.ndarray,
     summary_df = pd.DataFrame(summary_data)
     
     # Create table
-    table = ax6.table(cellText=summary_df.round(3).values,
+    table = ax5.table(cellText=summary_df.round(3).values,
                      colLabels=summary_df.columns,
                      cellLoc='center',
                      loc='center')
@@ -489,8 +481,8 @@ def create_fairness_dashboard(y_true: np.ndarray, y_pred: np.ndarray,
         table[(0, i)].set_facecolor('#40466e')
         table[(0, i)].set_text_props(weight='bold', color='white')
     
-    ax6.axis('off')
-    ax6.set_title('Summary Statistics by Group', fontweight='bold', pad=20)
+    ax5.axis('off')
+    ax5.set_title('Summary Statistics by Group', fontweight='bold', pad=20)
     
     plt.suptitle('Fairness Metrics Dashboard', fontsize=20, fontweight='bold')
     
