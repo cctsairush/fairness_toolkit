@@ -154,20 +154,24 @@ class FairnessReporter:
             </table>
         </div>
         
-        <h3>2. Equal Opportunity</h3>
-        <div class="metric-card {{ equal_opportunity_status }}">
-            <p>{{ equal_opportunity_interpretation }}</p>
+        <h3>2. Equalized Odds</h3>
+        <div class="metric-card {{ equalized_odds_status }}">
+            <p>{{ equalized_odds_interpretation }}</p>
             <table>
                 <tr>
                     <th>Group</th>
                     <th>True Positive Rate</th>
-                    <th>Deviation from Average</th>
+                    <th>False Positive Rate</th>
+                    <th>TPR Deviation</th>
+                    <th>FPR Deviation</th>
                 </tr>
-                {% for group, value in equal_opportunity.items() %}
+                {% for group, values in equalized_odds.items() %}
                 <tr>
                     <td>{{ group }}</td>
-                    <td>{{ "%.3f"|format(value) if value == value else "N/A" }}</td>
-                    <td>{{ "%.3f"|format(equal_opportunity_deviations[group]) if equal_opportunity_deviations[group] == equal_opportunity_deviations[group] else "N/A" }}</td>
+                    <td>{{ "%.3f"|format(values.TPR) if values.TPR == values.TPR else "N/A" }}</td>
+                    <td>{{ "%.3f"|format(values.FPR) if values.FPR == values.FPR else "N/A" }}</td>
+                    <td>{{ "%.3f"|format(equalized_odds_deviations[group].TPR) if equalized_odds_deviations[group].TPR == equalized_odds_deviations[group].TPR else "N/A" }}</td>
+                    <td>{{ "%.3f"|format(equalized_odds_deviations[group].FPR) if equalized_odds_deviations[group].FPR == equalized_odds_deviations[group].FPR else "N/A" }}</td>
                 </tr>
                 {% endfor %}
             </table>
@@ -223,17 +227,6 @@ class FairnessReporter:
             </ul>
         </div>
         {% endfor %}
-        
-        <h2>Technical Details</h2>
-        <div class="metric-card">
-            <h4>Metrics Definitions</h4>
-            <ul>
-                <li><strong>Demographic Parity:</strong> Requires equal positive prediction rates across groups</li>
-                <li><strong>Equal Opportunity:</strong> Requires equal true positive rates across groups</li>
-                <li><strong>Calibration Parity:</strong> Requires equal predictive values across groups</li>
-                <li><strong>Disparate Impact:</strong> Ratio of positive rates between groups (0.8-1.25 is considered fair)</li>
-            </ul>
-        </div>
     </div>
 </body>
 </html>
@@ -304,11 +297,29 @@ class FairnessReporter:
             dp_score = max(0, 100 - dp_variance * 1000)
             scores.append(dp_score)
         
-        # 2. Equal opportunity score
-        eo_values = [v for v in metrics.equal_opportunity.values() if not np.isnan(v)]
-        if eo_values:
-            eo_variance = np.var(eo_values)
-            eo_score = max(0, 100 - eo_variance * 1000)
+        # 2. Equalized odds score (using TPR and FPR)
+        tpr_values = []
+        fpr_values = []
+        for group_metrics in metrics.equalized_odds.values():
+            if isinstance(group_metrics, dict):
+                if 'TPR' in group_metrics and not np.isnan(group_metrics['TPR']):
+                    tpr_values.append(group_metrics['TPR'])
+                if 'FPR' in group_metrics and not np.isnan(group_metrics['FPR']):
+                    fpr_values.append(group_metrics['FPR'])
+        
+        equalized_odds_scores = []
+        if tpr_values:
+            tpr_variance = np.var(tpr_values)
+            tpr_score = max(0, 100 - tpr_variance * 1000)
+            equalized_odds_scores.append(tpr_score)
+        
+        if fpr_values:
+            fpr_variance = np.var(fpr_values)
+            fpr_score = max(0, 100 - fpr_variance * 1000)
+            equalized_odds_scores.append(fpr_score)
+        
+        if equalized_odds_scores:
+            eo_score = np.mean(equalized_odds_scores)
             scores.append(eo_score)
         
         # 3. Calibration parity score (using both PPV and NPV)
@@ -336,11 +347,23 @@ class FairnessReporter:
             cp_score = np.mean(calibration_scores)
             scores.append(cp_score)
         
-        # 4. Disparate impact score
+        # 4. Disparate impact score (fixed to account for 0.8-1.25 acceptable range)
         di_values = [v for v in metrics.disparate_impact.values() if not np.isnan(v)]
         if di_values:
-            di_deviations = [abs(1 - v) for v in di_values]
-            di_score = max(0, 100 - np.mean(di_deviations) * 200)
+            # Calculate violations: how far outside the acceptable 0.8-1.25 range
+            violations = []
+            for v in di_values:
+                if v < 0.8:
+                    violations.append(0.8 - v)  # Distance below 0.8
+                elif v > 1.25:
+                    violations.append(v - 1.25)  # Distance above 1.25
+                else:
+                    violations.append(0.0)  # Within acceptable range
+            
+            # Score based on average violation severity
+            avg_violation = np.mean(violations)
+            # More aggressive penalty: even small violations should result in lower scores
+            di_score = max(0, 100 - avg_violation * 400)  # Increased penalty multiplier
             scores.append(di_score)
         
         # Return mean of all 4 metric scores
@@ -366,8 +389,8 @@ class FairnessReporter:
         
         if interpretations['demographic_parity']['has_issue']:
             issues.append("demographic parity")
-        if interpretations['equal_opportunity']['has_issue']:
-            issues.append("equal opportunity")
+        if interpretations['equalized_odds']['has_issue']:
+            issues.append("equalized odds")
         if interpretations['calibration_parity']['has_issue']:
             issues.append("calibration")
         if interpretations['disparate_impact']['has_issue']:
@@ -466,10 +489,21 @@ class FairnessReporter:
         dp_avg = np.mean(list(metrics.demographic_parity.values()))
         dp_deviations = {k: v - dp_avg for k, v in metrics.demographic_parity.items()}
         
-        eo_values = [v for v in metrics.equal_opportunity.values() if not np.isnan(v)]
-        eo_avg = np.mean(eo_values) if eo_values else 0
-        eo_deviations = {k: (v - eo_avg if not np.isnan(v) else np.nan) 
-                        for k, v in metrics.equal_opportunity.items()}
+        # For equalized odds, calculate deviations for both TPR and FPR
+        tpr_values = [v['TPR'] for v in metrics.equalized_odds.values() if isinstance(v, dict) and 'TPR' in v and not np.isnan(v['TPR'])]
+        fpr_values = [v['FPR'] for v in metrics.equalized_odds.values() if isinstance(v, dict) and 'FPR' in v and not np.isnan(v['FPR'])]
+        
+        tpr_avg = np.mean(tpr_values) if tpr_values else 0
+        fpr_avg = np.mean(fpr_values) if fpr_values else 0
+        
+        eo_deviations = {}
+        for k, v in metrics.equalized_odds.items():
+            if isinstance(v, dict):
+                tpr_dev = v['TPR'] - tpr_avg if 'TPR' in v and not np.isnan(v['TPR']) else np.nan
+                fpr_dev = v['FPR'] - fpr_avg if 'FPR' in v and not np.isnan(v['FPR']) else np.nan
+                eo_deviations[k] = {'TPR': tpr_dev, 'FPR': fpr_dev}
+            else:
+                eo_deviations[k] = {'TPR': np.nan, 'FPR': np.nan}
         
         return {
             'demographic_parity': metrics.demographic_parity,
@@ -477,10 +511,10 @@ class FairnessReporter:
             'demographic_parity_status': self._get_status_class(interpretations['demographic_parity']['severity']),
             'demographic_parity_interpretation': interpretations['demographic_parity']['interpretation'],
             
-            'equal_opportunity': metrics.equal_opportunity,
-            'equal_opportunity_deviations': eo_deviations,
-            'equal_opportunity_status': self._get_status_class(interpretations['equal_opportunity']['severity']),
-            'equal_opportunity_interpretation': interpretations['equal_opportunity']['interpretation'],
+            'equalized_odds': metrics.equalized_odds,
+            'equalized_odds_deviations': eo_deviations,
+            'equalized_odds_status': self._get_status_class(interpretations['equalized_odds']['severity']),
+            'equalized_odds_interpretation': interpretations['equalized_odds']['interpretation'],
             
             'calibration_parity': metrics.calibration_parity,
             'calibration_parity_status': self._get_status_class(interpretations['calibration_parity']['severity']),
@@ -534,38 +568,42 @@ def interpret_metrics(metrics: FairnessMetrics, sensitive_features: np.ndarray) 
         'range': dp_range
     }
     
-    # Interpret Equal Opportunity
-    eo_values = [v for v in metrics.equal_opportunity.values() if not np.isnan(v)]
-    if eo_values:
-        eo_range = max(eo_values) - min(eo_values)
+    # Interpret Equalized Odds
+    tpr_values = [v['TPR'] for v in metrics.equalized_odds.values() if isinstance(v, dict) and 'TPR' in v and not np.isnan(v['TPR'])]
+    fpr_values = [v['FPR'] for v in metrics.equalized_odds.values() if isinstance(v, dict) and 'FPR' in v and not np.isnan(v['FPR'])]
+    
+    if tpr_values and fpr_values:
+        tpr_range = max(tpr_values) - min(tpr_values)
+        fpr_range = max(fpr_values) - min(fpr_values)
+        max_range = max(tpr_range, fpr_range)
         
-        if eo_range < 0.1:
-            eo_interpretation = "Excellent equal opportunity. All groups have similar true positive rates."
+        if max_range < 0.1:
+            eo_interpretation = "Excellent equalized odds. All groups have similar true positive and false positive rates."
             eo_severity = "none"
             eo_has_issue = False
-        elif eo_range < 0.2:
-            eo_interpretation = "Good equal opportunity with minor differences."
+        elif max_range < 0.2:
+            eo_interpretation = "Good equalized odds with minor differences in error rates."
             eo_severity = "low"
             eo_has_issue = False
-        elif eo_range < 0.3:
-            eo_interpretation = "Moderate equal opportunity issues. Some groups have different abilities to achieve positive outcomes."
+        elif max_range < 0.3:
+            eo_interpretation = "Moderate equalized odds issues. Some groups have different error rates."
             eo_severity = "medium"
             eo_has_issue = True
         else:
-            eo_interpretation = "Significant equal opportunity issues. Large disparities in true positive rates."
+            eo_interpretation = "Significant equalized odds issues. Large disparities in true positive and/or false positive rates."
             eo_severity = "high"
             eo_has_issue = True
     else:
-        eo_interpretation = "Unable to calculate equal opportunity metrics due to insufficient positive samples."
+        eo_interpretation = "Unable to calculate equalized odds metrics due to insufficient samples."
         eo_severity = "none"
         eo_has_issue = False
-        eo_range = 0
+        max_range = 0
     
-    interpretations['equal_opportunity'] = {
+    interpretations['equalized_odds'] = {
         'interpretation': eo_interpretation,
         'severity': eo_severity,
         'has_issue': eo_has_issue,
-        'range': eo_range
+        'range': max_range
     }
     
     # Interpret Calibration Parity
@@ -661,16 +699,17 @@ def suggest_improvements(metrics: FairnessMetrics, interpretations: Dict) -> Lis
         }
         recommendations.append(rec)
     
-    # Equal Opportunity recommendations
-    if interpretations['equal_opportunity']['has_issue']:
+    # Equalized Odds recommendations
+    if interpretations['equalized_odds']['has_issue']:
         rec = {
-            'title': 'Improving Equal Opportunity',
-            'description': 'Different groups have unequal true positive rates. Try these methods:',
+            'title': 'Improving Equalized Odds',
+            'description': 'Different groups have unequal true positive rates and/or false positive rates. Try these methods:',
             'actions': [
-                'Apply equalized odds post-processing to adjust decision thresholds',
-                'Use cost-sensitive learning with group-specific costs',
-                'Implement fairness constraints during model training',
-                'Consider separate models for different groups with careful validation'
+                'Apply equalized odds post-processing to adjust decision thresholds per group',
+                'Use cost-sensitive learning with group-specific costs for both TPR and FPR',
+                'Implement fairness constraints during model training to minimize TPR and FPR disparities',
+                'Consider separate models for different groups with careful validation',
+                'Use adversarial debiasing techniques to enforce equalized odds'
             ]
         }
         recommendations.append(rec)
