@@ -5,7 +5,7 @@
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }
         .container { background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 3px solid #4CAF50; padding-bottom: 10px; }
+        h1 { color: #333; border-bottom: 3px solid #5f5f5f; padding-bottom: 10px; }
         h2 { color: #555; margin-top: 30px; }
         h3 { color: #666; }
         .metric-card { background-color: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #4CAF50; }
@@ -22,21 +22,21 @@
         tr:hover { background-color: #f5f5f5; }
         .recommendation { background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #2196F3; }
         .summary-box { background-color: #f0f0f0; padding: 20px; border-radius: 5px; margin: 20px 0; }
-        .metric-value { font-weight: bold; color: #4CAF50; }
+        .metric-value { font-weight: bold; color: #2196F3; }
         .timestamp { color: #666; font-size: 0.9em; }
-        .feature-selector { background-color: #e8f5e9; padding: 20px; border-radius: 5px; margin: 20px 0; }
+        .feature-selector { background-color: #f0f0f0; padding: 20px; border-radius: 5px; margin: 20px 0; }
         .feature-selector label { font-weight: bold; margin-right: 10px; font-size: 16px; }
-        .feature-selector select { padding: 10px 15px; border: 2px solid #4CAF50; border-radius: 4px; font-size: 16px; background-color: white; cursor: pointer; }
+        .feature-selector select { padding: 10px 15px; border: 2px solid #5f5f5f; border-radius: 4px; font-size: 16px; background-color: white; cursor: pointer; }
         .feature-selector select:hover { background-color: #f5f5f5; }
         .feature-content { display: none; }
         .feature-content.active { display: block; }
         .tab-container { background-color: #f0f0f0; padding: 10px; border-radius: 5px; margin: 20px 0; }
         .tab-button { background-color: #ddd; border: none; padding: 10px 20px; cursor: pointer; margin-right: 5px; border-radius: 5px 5px 0 0; font-size: 14px; }
         .tab-button:hover { background-color: #ccc; }
-        .tab-button.active { background-color: #4CAF50; color: white; }
+        .tab-button.active { background-color: #2196f3; color: white; }
         .tab-content { display: none; padding: 20px; background-color: white; border-radius: 0 5px 5px 5px; }
         .tab-content.active { display: block; }
-        .feature-overview { background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .feature-overview { background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin: 10px 0; }
         .plot-container { text-align: center; margin: 20px 0; }
         .plot-container img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px; }
         
@@ -81,7 +81,7 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .stratified-performance-table th { 
-            background-color: #4CAF50; 
+            background-color: #2196F3; 
             color: white; 
             padding: 15px; 
             text-align: center; 
@@ -93,7 +93,7 @@
             text-align: center; 
             font-size: 18px; 
             font-weight: bold; 
-            color: #4CAF50;
+            color: #2196F3;
         }
         .stratified-performance-table tr:nth-child(even) { 
             background-color: #f9f9f9; 
@@ -101,6 +101,12 @@
         .stratified-performance-table .group-name { 
             font-weight: bold; 
             color: #333; 
+        }
+        
+        /* Model Performance Table Styles */
+        .model-performance-table th {
+            background-color: #2196F3 !important;
+            color: white !important;
         }
         
         /* Tooltip styles */
@@ -153,6 +159,31 @@
         .tooltip:hover .tooltiptext {
             visibility: visible;
             opacity: 1;
+        }
+        
+        /* Metric Score Styles */
+        .metric-score {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            min-width: 60px;
+            text-align: center;
+            color: white;
+            display: inline-block;
+        }
+        
+        .metric-score.success {
+            background-color: #28a745;
+        }
+        
+        .metric-score.warning {
+            background-color: #ffc107;
+            color: #856404;
+        }
+        
+        .metric-score.danger {
+            background-color: #dc3545;
         }
     </style>
     <script>
@@ -253,7 +284,7 @@
         {% for feature in features %}
         <div class="feature-content feature-{{ feature }}">
             <div class="feature-overview">
-                <h2>Analysis for {{ feature|title }}</h2>
+                <h2>Summary for {{ feature|title }}</h2>
                 <p>{{ feature_summaries[feature] }}</p>
                 <ul>
                     <li>Number of Groups: <span class="metric-value">{{ feature_stats[feature].num_groups }}</span></li>
@@ -290,7 +321,7 @@
             
             <div id="performance-{{ feature }}" class="tab-content tab-content-{{ feature }}">
                 <h3>Model Performance by {{ feature|title }}</h3>
-                <table>
+                <table class="model-performance-table">
                     <tr>
                         <th>Group</th>
                         <th>Count</th>
@@ -319,7 +350,16 @@
             <div id="metrics-{{ feature }}" class="tab-content tab-content-{{ feature }}">
                 <h3>Fairness Metrics for {{ feature|title }}</h3>
                 
-                <h4>1. <span class="tooltip">Demographic Parity<span class="tooltiptext">Fairness measure that requires all groups to receive positive predictions at the same rate, regardless of the actual outcomes. For example, if 50% of Group A gets approved for loans, then 50% of Group B should also get approved.</span></span></h4>
+                <h3 style="display: flex; align-items: center; justify-content: space-between;">1. <span class="tooltip">Demographic Parity<span class="tooltiptext">Fairness measure that requires all groups to receive positive predictions at the same rate, regardless of the actual outcomes. For example, if 50% of Group A gets approved for loans, then 50% of Group B should also get approved.</span></span> <span class="metric-score {{ fairness_analysis[feature].demographic_parity_status }}">{{ fairness_analysis[feature].demographic_parity_score if fairness_analysis[feature].demographic_parity_score else 'N/A' }}</span></h3>
+                <div style="margin-bottom: 15px; padding: 10px; border: 1px solid #e0e0e0; border-radius: 4px; background-color: #f8f9fa;">
+                    <p><strong>Question:</strong> Are groups selected at similar rates?</p>
+                    <p><strong>Formula:</strong> P(r(X) > t | A = a) = P(r(X) > t | A = b)</p>
+                    <p><strong>Use Case:</strong> Equal access, unbiased flagging</p>
+                    <p style="margin-top: 10px;">
+                        💡 <strong>Plain English:</strong> In a hospital, this checks if the sepsis alert system flags patients at similar rates across all demographics. 
+                        If 30% of one group triggers alerts, roughly 30% of every other group should too. When violated, it's like having different clinical thresholds based on patient background rather than medical need.
+                    </p>
+                </div>
                 <div class="metric-card {{ fairness_analysis[feature].demographic_parity_status }}">
                     <p>{{ fairness_analysis[feature].demographic_parity_interpretation }}</p>
                     <table>
@@ -338,26 +378,48 @@
                     </table>
                 </div>
                 
-                <h4>2. <span class="tooltip">Equal Opportunity<span class="tooltiptext">Fairness measure that ensures qualified individuals from all groups have an equal chance of receiving positive outcomes. For example, among all qualified job applicants, each group should have the same chance of being hired.</span></span></h4>
-                <div class="metric-card {{ fairness_analysis[feature].equal_opportunity_status }}">
-                    <p>{{ fairness_analysis[feature].equal_opportunity_interpretation }}</p>
+                <h3 style="display: flex; align-items: center; justify-content: space-between;">2. <span class="tooltip">Equalized Odds<span class="tooltiptext">Fairness measure that ensures both true positive rates and false positive rates are equal across all groups. For example, among qualified job applicants, each group should have the same chance of being hired (TPR), and among unqualified applicants, each group should have the same chance of being incorrectly hired (FPR).</span></span> <span class="metric-score {{ fairness_analysis[feature].equalized_odds_status }}">{{ fairness_analysis[feature].equalized_odds_score if fairness_analysis[feature].equalized_odds_score else 'N/A' }}</span></h3>
+                <div style="margin-bottom: 15px; padding: 10px; border: 1px solid #e0e0e0; border-radius: 4px; background-color: #f8f9fa;">
+                    <p><strong>Question:</strong> Are error rates equal across groups?</p>
+                    <p><strong>Formula:</strong> P(r(X) > t | Y = 1, A = a) = P(r(X) > t | Y = 1, A = b)</p>
+                    <p><strong>Use Case:</strong> Equal false alarm & miss rates</p>
+                    <p style="margin-top: 10px;">
+                        💡 <strong>Plain English:</strong> This ensures the sepsis prediction model is equally accurate for all patient groups. 
+                        It shouldn't miss more actual sepsis cases in elderly patients while over-alerting for younger ones. Like ensuring a vital signs monitor has the same accuracy whether used in the ICU or general ward.
+                    </p>
+                </div>
+                <div class="metric-card {{ fairness_analysis[feature].equalized_odds_status }}">
+                    <p>{{ fairness_analysis[feature].equalized_odds_interpretation }}</p>
                     <table>
                         <tr>
                             <th>Group</th>
                             <th><span class="tooltip">True Positive Rate<span class="tooltiptext">Among people who actually deserve a positive outcome (e.g., qualified candidates), what percentage did the model correctly identify? Higher values mean the model is better at recognizing qualified individuals from that group.</span></span></th>
-                            <th>Deviation from Average</th>
+                            <th><span class="tooltip">False Positive Rate<span class="tooltiptext">Among people who don't deserve a positive outcome (e.g., unqualified candidates), what percentage did the model incorrectly identify as positive? Lower values are better.</span></span></th>
+                            <th>TPR Deviation</th>
+                            <th>FPR Deviation</th>
                         </tr>
-                        {% for group, value in fairness_metrics[feature].equal_opportunity.items() %}
+                        {% for group, values in fairness_metrics[feature].equalized_odds.items() %}
                         <tr>
                             <td>{{ group }}</td>
-                            <td>{{ "%.3f"|format(value) if value == value else "N/A" }}</td>
-                            <td>{{ "%.3f"|format(fairness_analysis[feature].equal_opportunity_deviations[group]) if fairness_analysis[feature].equal_opportunity_deviations[group] == fairness_analysis[feature].equal_opportunity_deviations[group] else "N/A" }}</td>
+                            <td>{{ "%.3f"|format(values.TPR) if values.TPR == values.TPR else "N/A" }}</td>
+                            <td>{{ "%.3f"|format(values.FPR) if values.FPR == values.FPR else "N/A" }}</td>
+                            <td>{{ "%.3f"|format(fairness_analysis[feature].equalized_odds_deviations[group].TPR) if fairness_analysis[feature].equalized_odds_deviations[group].TPR == fairness_analysis[feature].equalized_odds_deviations[group].TPR else "N/A" }}</td>
+                            <td>{{ "%.3f"|format(fairness_analysis[feature].equalized_odds_deviations[group].FPR) if fairness_analysis[feature].equalized_odds_deviations[group].FPR == fairness_analysis[feature].equalized_odds_deviations[group].FPR else "N/A" }}</td>
                         </tr>
                         {% endfor %}
                     </table>
                 </div>
                 
-                <h4>3. <span class="tooltip">Calibration Parity<span class="tooltiptext">Fairness measure that ensures the model's confidence is equally reliable across all groups. For example, when the model is 80% confident about a positive prediction, it should be right 80% of the time for all groups.</span></span></h4>
+                <h3 style="display: flex; align-items: center; justify-content: space-between;">3. <span class="tooltip">Calibration Parity<span class="tooltiptext">Fairness measure that ensures the model's confidence is equally reliable across all groups. For example, when the model is 80% confident about a positive prediction, it should be right 80% of the time for all groups.</span></span> <span class="metric-score {{ fairness_analysis[feature].calibration_parity_status }}">{{ fairness_analysis[feature].calibration_parity_score if fairness_analysis[feature].calibration_parity_score else 'N/A' }}</span></h3>
+                <div style="margin-bottom: 15px; padding: 10px; border: 1px solid #e0e0e0; border-radius: 4px; background-color: #f8f9fa;">
+                    <p><strong>Question:</strong> Does the score mean the same thing for all groups?</p>
+                    <p><strong>Formula:</strong> P(Y = 1 | r(X), A = a) = P(Y = 1 | r(X), A = b)</p>
+                    <p><strong>Use Case:</strong> Resource allocation, risk models</p>
+                    <p style="margin-top: 10px;">
+                        💡 <strong>Plain English:</strong> A sepsis risk score of 70% should mean the same likelihood of sepsis for all patients, regardless of their insurance or language. 
+                        If violated, it's like having a temperature reading of 38.5°C mean 'fever' for some patients but 'normal' for others based on demographics rather than clinical factors.
+                    </p>
+                </div>
                 <div class="metric-card {{ fairness_analysis[feature].calibration_parity_status }}">
                     <p>{{ fairness_analysis[feature].calibration_parity_interpretation }}</p>
                     <table>
@@ -376,7 +438,16 @@
                     </table>
                 </div>
                 
-                <h4>4. <span class="tooltip">Disparate Impact<span class="tooltiptext">A legal measure of fairness that compares positive outcome rates between groups. The "80% rule" states that no group should have a positive rate less than 80% of the highest group's rate. Values between 0.8-1.25 are generally considered fair.</span></span></h4>
+                <h3 style="display: flex; align-items: center; justify-content: space-between;">4. <span class="tooltip">Disparate Impact<span class="tooltiptext">A legal measure of fairness that compares positive outcome rates between groups. The "80% rule" states that no group should have a positive rate less than 80% of the highest group's rate. Values between 0.8-1.25 are generally considered fair.</span></span> <span class="metric-score {{ fairness_analysis[feature].disparate_impact_status }}">{{ fairness_analysis[feature].disparate_impact_score if fairness_analysis[feature].disparate_impact_score else 'N/A' }}</span></h3>
+                <div style="margin-bottom: 15px; padding: 10px; border: 1px solid #e0e0e0; border-radius: 4px; background-color: #f8f9fa;">
+                    <p><strong>Question:</strong> Do groups receive positive outcomes at proportional rates?</p>
+                    <p><strong>Formula:</strong> DI = P(Ŷ = 1 | A = unprivileged) / P(Ŷ = 1 | A = privileged)</p>
+                    <p><strong>Use Case:</strong> Regulatory compliance, bias detection</p>
+                    <p style="margin-top: 10px;">
+                        💡 <strong>Plain English:</strong> This measures if a hospital's AI screening tool disproportionately excludes certain patient groups from care. 
+                        If the tool approves 80% of patients from one demographic but only 60% from another, the disparate impact ratio is 0.75. Values below 0.8 (the "80% rule") typically indicate concerning bias, like having stricter criteria for some patients based on non-medical factors.
+                    </p>
+                </div>
                 <div class="metric-card {{ fairness_analysis[feature].disparate_impact_status }}">
                     <p>{{ fairness_analysis[feature].disparate_impact_interpretation }}</p>
                     <table>
@@ -440,17 +511,6 @@
             </div>
         </div>
         {% endfor %}
-        
-        <h2>Technical Details</h2>
-        <div class="metric-card">
-            <h4>Metrics Definitions</h4>
-            <ul>
-                <li><strong><span class="tooltip">Demographic Parity<span class="tooltiptext">Fairness measure that requires all groups to receive positive predictions at the same rate, regardless of the actual outcomes. For example, if 50% of Group A gets approved for loans, then 50% of Group B should also get approved.</span></span>:</strong> Requires equal positive prediction rates across groups</li>
-                <li><strong><span class="tooltip">Equal Opportunity<span class="tooltiptext">Fairness measure that ensures qualified individuals from all groups have an equal chance of receiving positive outcomes. For example, among all qualified job applicants, each group should have the same chance of being hired.</span></span>:</strong> Requires equal true positive rates across groups</li>
-                <li><strong><span class="tooltip">Calibration Parity<span class="tooltiptext">Fairness measure that ensures the model's confidence is equally reliable across all groups. For example, when the model is 80% confident about a positive prediction, it should be right 80% of the time for all groups.</span></span>:</strong> Requires equal predictive values across groups</li>
-                <li><strong><span class="tooltip">Disparate Impact<span class="tooltiptext">A legal measure of fairness that compares positive outcome rates between groups. The "80% rule" states that no group should have a positive rate less than 80% of the highest group's rate. Values between 0.8-1.25 are generally considered fair.</span></span>:</strong> Ratio of positive rates between groups (0.8-1.25 is considered fair)</li>
-            </ul>
-        </div>
     </div>
 </body>
 </html>
