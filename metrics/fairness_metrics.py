@@ -9,8 +9,7 @@ from dataclasses import dataclass
 class FairnessMetrics:
     """Container for fairness metrics results."""
     demographic_parity: Dict[str, float]
-    equal_opportunity: Dict[str, float]
-    equalized_odds: Dict[str, float]
+    equalized_odds: Dict[str, Dict[str, float]]
     calibration_parity: Dict[str, Dict[str, float]]
     disparate_impact: Dict[str, float]
     statistical_parity_difference: Dict[str, float]
@@ -307,7 +306,6 @@ def calculate_all_metrics(y_true: np.ndarray, y_pred: np.ndarray, sensitive_feat
     """
     return FairnessMetrics(
         demographic_parity=demographic_parity(y_true, y_pred, sensitive_features),
-        equal_opportunity=equal_opportunity(y_true, y_pred, sensitive_features),
         equalized_odds=equalized_odds(y_true, y_pred, sensitive_features),
         calibration_parity=calibration_parity(y_true, y_pred, sensitive_features, y_prob),
         disparate_impact=disparate_impact(y_true, y_pred, sensitive_features, privileged_group),
