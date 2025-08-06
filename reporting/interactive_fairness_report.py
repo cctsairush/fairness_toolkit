@@ -151,11 +151,29 @@ class InteractiveFairnessReporter:
             dp_score = max(0, 100 - dp_variance * 1000)
             scores.append(dp_score)
         
-        # 2. Equal opportunity score
-        eo_values = [v for v in metrics.equal_opportunity.values() if not np.isnan(v)]
-        if eo_values:
-            eo_variance = np.var(eo_values)
-            eo_score = max(0, 100 - eo_variance * 1000)
+        # 2. Equalized odds score (using TPR and FPR)
+        tpr_values = []
+        fpr_values = []
+        for group_metrics in metrics.equalized_odds.values():
+            if isinstance(group_metrics, dict):
+                if 'TPR' in group_metrics and not np.isnan(group_metrics['TPR']):
+                    tpr_values.append(group_metrics['TPR'])
+                if 'FPR' in group_metrics and not np.isnan(group_metrics['FPR']):
+                    fpr_values.append(group_metrics['FPR'])
+        
+        equalized_odds_scores = []
+        if tpr_values:
+            tpr_variance = np.var(tpr_values)
+            tpr_score = max(0, 100 - tpr_variance * 1000)
+            equalized_odds_scores.append(tpr_score)
+        
+        if fpr_values:
+            fpr_variance = np.var(fpr_values)
+            fpr_score = max(0, 100 - fpr_variance * 1000)
+            equalized_odds_scores.append(fpr_score)
+        
+        if equalized_odds_scores:
+            eo_score = np.mean(equalized_odds_scores)
             scores.append(eo_score)
         
         # 3. Calibration parity score (using both PPV and NPV)
@@ -183,11 +201,23 @@ class InteractiveFairnessReporter:
             cp_score = np.mean(calibration_scores)
             scores.append(cp_score)
         
-        # 4. Disparate impact score
+        # 4. Disparate impact score (fixed to account for 0.8-1.25 acceptable range)
         di_values = [v for v in metrics.disparate_impact.values() if not np.isnan(v)]
         if di_values:
-            di_deviations = [abs(1 - v) for v in di_values]
-            di_score = max(0, 100 - np.mean(di_deviations) * 200)
+            # Calculate violations: how far outside the acceptable 0.8-1.25 range
+            violations = []
+            for v in di_values:
+                if v < 0.8:
+                    violations.append(0.8 - v)  # Distance below 0.8
+                elif v > 1.25:
+                    violations.append(v - 1.25)  # Distance above 1.25
+                else:
+                    violations.append(0.0)  # Within acceptable range
+            
+            # Score based on average violation severity
+            avg_violation = np.mean(violations)
+            # More aggressive penalty: even small violations should result in lower scores
+            di_score = max(0, 100 - avg_violation * 400)  # Increased penalty multiplier
             scores.append(di_score)
         
         # Return mean of all 4 metric scores
@@ -199,15 +229,15 @@ class InteractiveFairnessReporter:
         unique_groups = sorted(np.unique(sensitive_features))
         groups_str = ', '.join(str(g) for g in unique_groups)
         
-        feature_desc = f"Analysis for <b>{feature_name}</b> with groups: <b>{groups_str}</b>. "
+        feature_desc = f"Summary for <b>{feature_name}</b> with groups: <b>{groups_str}</b>. "
         
         # Check for issues
         issues = []
         
         if interpretations['demographic_parity']['has_issue']:
             issues.append("demographic parity")
-        if interpretations['equal_opportunity']['has_issue']:
-            issues.append("equal opportunity")
+        if interpretations['equalized_odds']['has_issue']:
+            issues.append("equalized odds")
         if interpretations['calibration_parity']['has_issue']:
             issues.append("calibration")
         if interpretations['disparate_impact']['has_issue']:
@@ -217,9 +247,10 @@ class InteractiveFairnessReporter:
         if not issues:
             summary = "The model demonstrates good fairness across all evaluated metrics for this feature."
         elif len(issues) == 1:
-            summary = f"The model shows potential fairness issues in {issues[0]} for this feature."
+            summary = f"The model shows potential fairness issues in <b>{issues[0]}</b> for this feature."
         else:
-            summary = f"The model shows potential fairness issues in multiple areas for this feature: {', '.join(issues)}."
+            bold_issues = ', '.join([f"<b>{issue}</b>" for issue in issues])
+            summary = f"The model shows potential fairness issues in multiple areas for this feature: {bold_issues}."
         
         return feature_desc + summary
     
@@ -335,6 +366,96 @@ class InteractiveFairnessReporter:
         
         return plots
     
+    def _calculate_individual_metric_scores(self, metrics: FairnessMetrics) -> Dict:
+        """Calculate individual scores for each fairness metric."""
+        scores = {}
+        
+        # 1. Demographic parity score
+        dp_values = list(metrics.demographic_parity.values())
+        if dp_values:
+            dp_variance = np.var(dp_values)
+            dp_score = max(0, 100 - dp_variance * 1000)
+            scores['demographic_parity'] = round(dp_score, 1)
+        else:
+            scores['demographic_parity'] = None
+        
+        # 2. Equalized odds score (using TPR and FPR)
+        tpr_values = []
+        fpr_values = []
+        for group_metrics in metrics.equalized_odds.values():
+            if isinstance(group_metrics, dict):
+                if 'TPR' in group_metrics and not np.isnan(group_metrics['TPR']):
+                    tpr_values.append(group_metrics['TPR'])
+                if 'FPR' in group_metrics and not np.isnan(group_metrics['FPR']):
+                    fpr_values.append(group_metrics['FPR'])
+        
+        equalized_odds_scores = []
+        if tpr_values:
+            tpr_variance = np.var(tpr_values)
+            tpr_score = max(0, 100 - tpr_variance * 1000)
+            equalized_odds_scores.append(tpr_score)
+        
+        if fpr_values:
+            fpr_variance = np.var(fpr_values)
+            fpr_score = max(0, 100 - fpr_variance * 1000)
+            equalized_odds_scores.append(fpr_score)
+        
+        if equalized_odds_scores:
+            eo_score = np.mean(equalized_odds_scores)
+            scores['equalized_odds'] = round(eo_score, 1)
+        else:
+            scores['equalized_odds'] = None
+        
+        # 3. Calibration parity score (using both PPV and NPV)
+        ppv_values = []
+        npv_values = []
+        for group_metrics in metrics.calibration_parity.values():
+            if isinstance(group_metrics, dict):
+                if 'PPV' in group_metrics and not np.isnan(group_metrics['PPV']):
+                    ppv_values.append(group_metrics['PPV'])
+                if 'NPV' in group_metrics and not np.isnan(group_metrics['NPV']):
+                    npv_values.append(group_metrics['NPV'])
+        
+        calibration_scores = []
+        if ppv_values:
+            ppv_variance = np.var(ppv_values)
+            ppv_score = max(0, 100 - ppv_variance * 1000)
+            calibration_scores.append(ppv_score)
+        
+        if npv_values:
+            npv_variance = np.var(npv_values)
+            npv_score = max(0, 100 - npv_variance * 1000)
+            calibration_scores.append(npv_score)
+        
+        if calibration_scores:
+            cp_score = np.mean(calibration_scores)
+            scores['calibration_parity'] = round(cp_score, 1)
+        else:
+            scores['calibration_parity'] = None
+        
+        # 4. Disparate impact score (fixed to account for 0.8-1.25 acceptable range)
+        di_values = [v for v in metrics.disparate_impact.values() if not np.isnan(v)]
+        if di_values:
+            # Calculate violations: how far outside the acceptable 0.8-1.25 range
+            violations = []
+            for v in di_values:
+                if v < 0.8:
+                    violations.append(0.8 - v)  # Distance below 0.8
+                elif v > 1.25:
+                    violations.append(v - 1.25)  # Distance above 1.25
+                else:
+                    violations.append(0.0)  # Within acceptable range
+            
+            # Score based on average violation severity
+            avg_violation = np.mean(violations)
+            # More aggressive penalty: even small violations should result in lower scores
+            di_score = max(0, 100 - avg_violation * 400)  # Increased penalty multiplier
+            scores['disparate_impact'] = round(di_score, 1)
+        else:
+            scores['disparate_impact'] = None
+        
+        return scores
+
     def _prepare_metrics_for_template(self, metrics: FairnessMetrics, interpretations: Dict) -> Dict:
         """Prepare metrics data for template rendering."""
         
@@ -342,29 +463,47 @@ class InteractiveFairnessReporter:
         dp_avg = np.mean(list(metrics.demographic_parity.values()))
         dp_deviations = {k: v - dp_avg for k, v in metrics.demographic_parity.items()}
         
-        eo_values = [v for v in metrics.equal_opportunity.values() if not np.isnan(v)]
-        eo_avg = np.mean(eo_values) if eo_values else 0
-        eo_deviations = {k: (v - eo_avg if not np.isnan(v) else np.nan) 
-                        for k, v in metrics.equal_opportunity.items()}
+        # For equalized odds, calculate deviations for both TPR and FPR
+        tpr_values = [v['TPR'] for v in metrics.equalized_odds.values() if isinstance(v, dict) and 'TPR' in v and not np.isnan(v['TPR'])]
+        fpr_values = [v['FPR'] for v in metrics.equalized_odds.values() if isinstance(v, dict) and 'FPR' in v and not np.isnan(v['FPR'])]
+        
+        tpr_avg = np.mean(tpr_values) if tpr_values else 0
+        fpr_avg = np.mean(fpr_values) if fpr_values else 0
+        
+        eo_deviations = {}
+        for k, v in metrics.equalized_odds.items():
+            if isinstance(v, dict):
+                tpr_dev = v['TPR'] - tpr_avg if 'TPR' in v and not np.isnan(v['TPR']) else np.nan
+                fpr_dev = v['FPR'] - fpr_avg if 'FPR' in v and not np.isnan(v['FPR']) else np.nan
+                eo_deviations[k] = {'TPR': tpr_dev, 'FPR': fpr_dev}
+            else:
+                eo_deviations[k] = {'TPR': np.nan, 'FPR': np.nan}
+        
+        # Calculate individual metric scores
+        individual_scores = self._calculate_individual_metric_scores(metrics)
         
         return {
             'demographic_parity': metrics.demographic_parity,
             'demographic_parity_deviations': dp_deviations,
             'demographic_parity_status': self._get_status_class(interpretations['demographic_parity']['severity']),
             'demographic_parity_interpretation': interpretations['demographic_parity']['interpretation'],
+            'demographic_parity_score': individual_scores['demographic_parity'],
             
-            'equal_opportunity': metrics.equal_opportunity,
-            'equal_opportunity_deviations': eo_deviations,
-            'equal_opportunity_status': self._get_status_class(interpretations['equal_opportunity']['severity']),
-            'equal_opportunity_interpretation': interpretations['equal_opportunity']['interpretation'],
+            'equalized_odds': metrics.equalized_odds,
+            'equalized_odds_deviations': eo_deviations,
+            'equalized_odds_status': self._get_status_class(interpretations['equalized_odds']['severity']),
+            'equalized_odds_interpretation': interpretations['equalized_odds']['interpretation'],
+            'equalized_odds_score': individual_scores['equalized_odds'],
             
             'calibration_parity': metrics.calibration_parity,
             'calibration_parity_status': self._get_status_class(interpretations['calibration_parity']['severity']),
             'calibration_parity_interpretation': interpretations['calibration_parity']['interpretation'],
+            'calibration_parity_score': individual_scores['calibration_parity'],
             
             'disparate_impact': metrics.disparate_impact,
             'disparate_impact_status': self._get_status_class(interpretations['disparate_impact']['severity']),
             'disparate_impact_interpretation': interpretations['disparate_impact']['interpretation'],
+            'disparate_impact_score': individual_scores['disparate_impact'],
         }
     
     def _get_status_class(self, severity: str) -> str:
