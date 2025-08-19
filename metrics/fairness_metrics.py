@@ -21,14 +21,16 @@ class MultipleFairnessMetrics:
     metrics_by_feature: Dict[str, FairnessMetrics]
     
 
-def _validate_inputs(y_true: np.ndarray, y_pred: np.ndarray, sensitive_features: np.ndarray) -> None:
+def _validate_inputs(y_true: np.ndarray, y_pred: np.ndarray, sensitive_features: np.ndarray, y_prob: Optional[np.ndarray] = None) -> None:
     """Validate input arrays."""
-    if len(y_true) != len(y_pred) or len(y_true) != len(sensitive_features):
+    if len(y_true) != len(y_pred) or len(y_true) != len(sensitive_features) or (y_prob is not None and len(y_true) != len(y_prob)):
         raise ValueError("All input arrays must have the same length")
     
     if not np.array_equal(np.unique(y_true), [0, 1]) or not np.array_equal(np.unique(y_pred), [0, 1]):
         raise ValueError("y_true and y_pred must be binary (0 or 1)")
 
+    if y_prob is not None and np.any(y_prob < 0) or np.any(y_prob > 1):
+        raise ValueError("y_prob must be between 0 and 1")
 
 def demographic_parity(y_true: np.ndarray, y_pred: np.ndarray, sensitive_features: np.ndarray) -> Dict[str, float]:
     """
@@ -49,8 +51,6 @@ def demographic_parity(y_true: np.ndarray, y_pred: np.ndarray, sensitive_feature
     --------
     dict : Dictionary mapping each group to its positive prediction rate
     """
-    _validate_inputs(y_true, y_pred, sensitive_features)
-    
     groups = np.unique(sensitive_features)
     results = {}
     
@@ -81,7 +81,6 @@ def equal_opportunity(y_true: np.ndarray, y_pred: np.ndarray, sensitive_features
     --------
     dict : Dictionary mapping each group to its true positive rate
     """
-    _validate_inputs(y_true, y_pred, sensitive_features)
     
     groups = np.unique(sensitive_features)
     results = {}
@@ -122,7 +121,6 @@ def equalized_odds(y_true: np.ndarray, y_pred: np.ndarray, sensitive_features: n
     --------
     dict : Dictionary mapping each group to its TPR and FPR
     """
-    _validate_inputs(y_true, y_pred, sensitive_features)
     
     groups = np.unique(sensitive_features)
     results = {}
@@ -173,7 +171,6 @@ def calibration_parity(y_true: np.ndarray, y_pred: np.ndarray, sensitive_feature
     --------
     dict : Dictionary mapping each group to its PPV and NPV
     """
-    _validate_inputs(y_true, y_pred, sensitive_features)
     
     groups = np.unique(sensitive_features)
     results = {}
@@ -304,6 +301,10 @@ def calculate_all_metrics(y_true: np.ndarray, y_pred: np.ndarray, sensitive_feat
     --------
     FairnessMetrics : Object containing all calculated fairness metrics
     """
+
+    _validate_inputs(y_true, y_pred, sensitive_features, y_prob)
+    y_pred = y_pred if y_prob is None else (y_prob >= .4).astype(int)
+
     return FairnessMetrics(
         demographic_parity=demographic_parity(y_true, y_pred, sensitive_features),
         equalized_odds=equalized_odds(y_true, y_pred, sensitive_features),
