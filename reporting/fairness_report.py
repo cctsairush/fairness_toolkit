@@ -5,6 +5,8 @@ from datetime import datetime
 import json
 from jinja2 import Template
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
+
+
 from ..metrics import FairnessMetrics, calculate_all_metrics, calculate_metrics_for_multiple_features
 
 
@@ -465,7 +467,8 @@ class FairnessReporter:
         except Exception as e:
             print(f"Warning: Could not generate distributions plot: {e}")
             plots['distributions'] = None
-        
+                
+
         try:
             # Generate confusion matrices plot
             confusion_path = f"{base_name}_confusion_matrices.png"

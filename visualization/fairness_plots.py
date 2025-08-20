@@ -1,10 +1,11 @@
+from matplotlib import ticker
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Union, Optional, Tuple
-from sklearn.calibration import calibration_curve
-from sklearn.metrics import confusion_matrix
+from sklearn.calibration import LabelEncoder, calibration_curve
+from sklearn.metrics import confusion_matrix, roc_curve
 import matplotlib.gridspec as gridspec
 
 
@@ -62,6 +63,46 @@ def plot_fairness_metrics(metrics_dict: Dict[str, Dict[str, float]],
     
     return fig
 
+def plot_heatmap(features: list[str], metrics: list[str], 
+                 fairness_scores: Dict[str, list[float]],
+                 figsize: Tuple[int, int] = (15, 5),
+                 save_path: Optional[str] = None)  -> plt.Figure:
+    """
+    Plot heatmap of fairness metrics.
+    
+    Parameters:
+    -----------
+    features : list
+        List of feature names
+    metrics : list
+        List of fairness metrics
+    fairness_scores : dict
+        Dictionary of fairness scores with groups as keys
+    save_path : str, optional
+        Path to save the figure
+        
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+    """
+    # Convert scores to numpy array
+    scores = np.array([fairness_scores[feature] for feature in fairness_scores.keys()])
+
+    # Create heatmap
+    fig = plt.figure(figsize=figsize)
+    sns.heatmap(scores.T, vmin=0, vmax=1, annot=True, cmap='RdYlGn', fmt='.2f', xticklabels=features, yticklabels=metrics)
+    
+    # Set title and labels
+    plt.title('Fairness Scores Heatmap')
+    plt.ylabel('Metrics')
+    plt.xlabel('Features')
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+
+    return fig
+
 
 def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray, 
                            sensitive_features: np.ndarray,
@@ -109,6 +150,7 @@ def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray,
     data_pred = []
     group_labels = []
     
+    
     for group in groups:
         mask = sensitive_features == group
         data_actual.append(np.mean(y_true[mask]))
@@ -126,6 +168,7 @@ def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray,
     title = 'Actual vs Predicted Positive Rates by Group'
     if feature_name:
         title = f'Actual vs Predicted Positive Rates by {feature_name}'
+    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
     ax1.set_title(title)
     ax1.set_xticks(x)
     ax1.set_xticklabels(group_labels)
@@ -159,6 +202,7 @@ def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray,
     title = 'Classification Metrics by Group'
     if feature_name:
         title = f'Classification Metrics by {feature_name}'
+    ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
     ax2.set_title(title)
     ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax2.grid(True, alpha=0.3, axis='y')
@@ -187,6 +231,7 @@ def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray,
         title = 'Probability Distributions by Group and Class'
         if feature_name:
             title = f'Probability Distributions by {feature_name} and Class'
+        ax3.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
         ax3.set_title(title)
         ax3.legend()
         ax3.grid(True, alpha=0.3)
@@ -202,7 +247,7 @@ def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray,
 def plot_calibration_curves(y_true: np.ndarray, y_prob: np.ndarray,
                           sensitive_features: np.ndarray,
                           n_bins: int = 10,
-                          figsize: Tuple[int, int] = (10, 8),
+                          figsize: Tuple[int, int] = (12, 6),
                           save_path: Optional[str] = None,
                           feature_name: Optional[str] = None) -> plt.Figure:
     """
@@ -244,13 +289,14 @@ def plot_calibration_curves(y_true: np.ndarray, y_prob: np.ndarray,
                     marker='o', label=f'Group {group}', linewidth=2)
     
     # Perfect calibration line
-    ax1.plot([0, 1], [0, 1], 'k--', label='Perfect Calibration')
+    ax1.plot([0, 1], [0, 1], 'k:', label='Perfect Calibration')
     
     ax1.set_xlabel('Mean Predicted Probability')
     ax1.set_ylabel('Fraction of Positives')
     title = 'Calibration Curves by Group'
     if feature_name:
         title = f'Calibration Curves by {feature_name}'
+    ax1.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
     ax1.set_title(title)
     ax1.legend()
     ax1.grid(True, alpha=0.3)
@@ -293,7 +339,105 @@ def plot_calibration_curves(y_true: np.ndarray, y_prob: np.ndarray,
     
     return fig
 
+def plot_analysis_curves(y_true: np.ndarray, y_prob: np.ndarray,
+                     sensitive_features: np.ndarray,
+                     n_bins: int = 10,
+                     figsize: Tuple[int, int] = (12, 6),
+                     save_path: Optional[str] = None,
+                     feature_name: Optional[str] = None) -> plt.Figure:
+    """    Plot ROC AUC scores for each group.
+    
+    Parameters:
+    -----------
+    y_true : array-like
+        True binary labels
+    y_prob : array-like
+        Predicted probabilities
+    sensitive_features : array-like
+        Sensitive attribute values
+    n_bins : int
+        Number of bins for ROC curve
+    figsize : tuple
+        Figure size
+    save_path : str, optional
+        Path to save the figure
+        
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+    """
+    groups = np.unique(sensitive_features)
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+    
+    # Plot roc curves
+    for group in groups:
+        mask = sensitive_features == group
+        
+        fpr, tpr, thresholds = roc_curve(
+            y_true[mask], y_prob[mask]
+        )
+            
+        ax1.plot(fpr, tpr, label=f'Group {group}', linewidth=2)
+    
 
+    
+    ax1.set_xlabel('False Positive Rate')
+    ax1.set_ylabel('True Positive Rate')
+    title = 'ROC Curves by Group'
+    if feature_name:
+        title = f'ROC Curves by {feature_name}'
+    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
+    ax1.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
+    ax1.set_title(title)
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    ax1.set_xlim([0, 1])
+    ax1.set_ylim([0, 1])
+
+
+    # Plot net benefit
+    thresholds = np.linspace(0, .5, n_bins)
+    for group in groups:
+        mask = sensitive_features == group
+        net_benefits = np.zeros(n_bins)
+        for i, threshold in enumerate(thresholds):
+            y_pred_group = (y_prob[mask] >= threshold).astype(int)
+            tp = np.sum(y_true[mask] * y_pred_group)
+            fp = np.sum((1 - y_true[mask]) * y_pred_group)
+            n = len(y_true[mask])
+
+            net_benefit = (tp - fp * (threshold / (1 - threshold))) / n
+            net_benefits[i] = net_benefit
+        ax2.plot(thresholds, net_benefits, label=f'Group {group}', linewidth=2)
+
+    # Add the "Treat All" and "Treat None" lines
+    prevalence = np.mean(y_true)
+    net_benefit = prevalence - (1 - prevalence) * thresholds / (1 -thresholds)
+    ax2.plot(thresholds, net_benefit, label='Treat All')
+    ax2.axhline(y=0, linestyle=':', label='Treat None')
+
+
+    ax2.set_xlim([0, .35])  # Set x-axis limits
+    ax2.set_ylim([-0.1, .25])  # Set y-axis limits
+    ax2.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages
+    ax2.set_xlabel('Threshold')
+    ax2.set_ylabel('Net Benefit')
+    title = 'DCA Curves by Group'
+    if feature_name:
+        title = f'DCA Curves by {feature_name}'
+    ax2.set_title(title)
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
+    return fig
+    
 def plot_confusion_matrices(y_true: np.ndarray, y_pred: np.ndarray,
                           sensitive_features: np.ndarray,
                           figsize: Optional[Tuple[int, int]] = None,

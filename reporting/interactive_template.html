@@ -22,6 +22,7 @@
         tr:hover { background-color: #f5f5f5; }
         .recommendation { background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #2196F3; }
         .summary-box { background-color: #f0f0f0; padding: 20px; border-radius: 5px; margin: 20px 0; }
+        .technical-analysis { background-color: #f0f0f0; padding: 20px; border-radius: 5px; margin: 20px 0; }
         .metric-value { font-weight: bold; color: #2196F3; }
         .timestamp { color: #666; font-size: 0.9em; }
         .feature-selector { background-color: #f0f0f0; padding: 20px; border-radius: 5px; margin: 20px 0; }
@@ -39,6 +40,42 @@
         .feature-overview { background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin: 10px 0; }
         .plot-container { text-align: center; margin: 20px 0; }
         .plot-container img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px; }
+
+        
+        /* Slider styles */
+        .slider-container label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #4a5568;
+        }
+
+        .slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #e2e8f0;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+        }
         
         /* Overall Performance Table Styles */
         .overall-performance-table { 
@@ -187,6 +224,86 @@
         }
     </style>
     <script>
+
+        // Initialize global variables
+        const yTrue = {{ y_true | safe }};
+        const yProb = {{ y_prob | safe }};
+        const featureNames = {{ features | safe }};
+        const featureMasks = {{ feature_masks | safe }};
+
+        // Threshold update function
+        function updateThreshold(value) {
+            // Update threshold value
+            const t = parseFloat(value)
+            document.getElementById("threshold-value").textContent = t.toFixed(2);
+
+            // Create new pred array
+            const yPred = yProb.map(score => score >= t ? 1 : 0);
+
+            // Calculate confusion matrix data
+            let TP = 0
+            let TN = 0;
+            for (let i = 0; i < yTrue.length; i++) {
+                if (yTrue[i] === 1 && yPred[i] === 1) TP++;
+                else if (yTrue[i] === 0 && yPred[i] === 1) continue;
+                else if (yTrue[i] === 0 && yPred[i] === 0) TN++;
+                else if (yTrue[i] === 1 && yPred[i] === 0) continue;
+            }
+
+            // Recalculate accuracy
+            const accuracy = (TP + TN) / yTrue.length;
+            
+            // Update accuracy
+            document.getElementById("accuracy-display").textContent = accuracy.toFixed(3);
+
+            // Recalculate performance metrics for each feature and group
+            featureNames.forEach(feature => {
+                let i = 1;
+
+                Object.keys(featureMasks[feature]).forEach(group => {
+                    
+                    // Retrieve corresponding mask
+                    const mask = featureMasks[feature][group];
+
+                    // Filter yTrue and yPred arrays to include group elements only
+                    const yTrueGroup = yTrue.filter((_, i) => mask[i]);
+                    const yPredGroup = yPred.filter((_, i) => mask[i]);
+
+                    // Calculate confusion matrix data
+                    let TP = 0, FP = 0, TN = 0, FN = 0;
+                    for (let i = 0; i < yTrueGroup.length; i++) {
+                        if (yTrueGroup[i] === 1 && yPredGroup[i] === 1) TP++;
+                        else if (yTrueGroup[i] === 0 && yPredGroup[i] === 1) FP++;
+                        else if (yTrueGroup[i] === 0 && yPredGroup[i] === 0) TN++;
+                        else if (yTrueGroup[i] === 1 && yPredGroup[i] === 0) FN++;
+                    }
+
+                    // Calculate performance metrics
+                    const accuracy  = (TP + TN) / yTrueGroup.length;
+                    const precision = TP / (TP + FP) || 0;
+                    const recall    = TP / (TP + FN) || 0;
+                    const f1Score   = 2 * (precision * recall) / (precision + recall) || 0;
+
+                    // Update accuracy
+                    const groupCell = document.querySelector(`#feature-overview-${feature} table`).rows[i].cells[3];
+                    if (groupCell) {
+                        groupCell.textContent = accuracy.toFixed(3);
+                    }
+
+                    // Update the HTML elements
+                    const groupElement = document.querySelector(`#performance-${feature} table`).rows[i];
+                    if (groupElement) {
+                        groupElement.cells[2].textContent = accuracy.toFixed(3); // Accuracy
+                        groupElement.cells[3].textContent = precision.toFixed(3); // Precision
+                        groupElement.cells[4].textContent = recall.toFixed(3); // Recall
+                        groupElement.cells[5].textContent = f1Score.toFixed(3); // F1-Score
+                    }
+
+                    i++;
+                })
+            })
+        }
+
         function changeFeature() {
             var selector = document.getElementById('featureSelect');
             var selectedFeature = selector.value;
@@ -253,18 +370,21 @@
         <h1>Fairness Analysis Report</h1>
         <p class="timestamp">Generated on: {{ timestamp }}</p>
         
-        <div class="feature-selector">
-            <label for="featureSelect">Select Sensitive Feature:</label>
-            <select id="featureSelect" onchange="changeFeature()">
-                {% for feature in features %}
-                <option value="{{ feature }}">{{ feature|title }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        
         <div class="summary-box">
             <h2>Overall Performance</h2>
             <p>Model performance across the entire dataset without stratification by sensitive features.</p>
+
+            {% if y_prob %}
+                <div class="slider-container">
+                    <label for="threshold-slider">
+                        Risk Score Threshold: <span id="threshold-value">0.40</span>
+                    </label>
+                    <input type="range" id="threshold-slider" class="slider" 
+                            min="0.1" max="0.9" step="0.05" value="0.40"
+                            oninput="updateThreshold(this.value)">
+                </div>
+            {% endif %}
+
             <table class="overall-performance-table">
                 <tr>
                     <th>Total Sample Size</th>
@@ -275,15 +395,35 @@
                 <tr>
                     <td>{{ overall_performance.total_samples }}</td>
                     <td>{{ overall_performance.case_count }} ({{ "%.1f"|format(overall_performance.case_percentage) }}%)</td>
-                    <td>{{ "%.3f"|format(overall_performance.overall_accuracy) }}</td>
+                    <td id="accuracy-display">{{ "%.3f"|format(overall_performance.overall_accuracy) }}</td>
                     <td>{{ "%.3f"|format(overall_performance.overall_auc) if overall_performance.overall_auc == overall_performance.overall_auc else "N/A" }}</td>
                 </tr>
             </table>
         </div>
+
+        <div class="technical-analysis">
+            <h2>Technical Analysis</h2>
+            <p>Assessment of individual fairness metrics for each sensitive feature.</p>
+            {% if technical_analysis.heatmap %}
+                    <div class="plot-container">
+                        <h4>Heat Map</h4>
+                        <img src="{{ technical_analysis.heatmap }}" alt="Heat Map for features and metrics" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px;">
+                    </div>
+            {% endif %}
+        </div>
+
+        <div class="feature-selector">
+            <label for="featureSelect">Select Sensitive Feature:</label>
+            <select id="featureSelect" onchange="changeFeature()">
+                {% for feature in features %}
+                <option value="{{ feature }}">{{ feature|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
         
         {% for feature in features %}
         <div class="feature-content feature-{{ feature }}">
-            <div class="feature-overview">
+            <div id="feature-overview-{{ feature }}" class="feature-overview">
                 <h2>Summary for {{ feature|title }}</h2>
                 <p>{{ feature_summaries[feature] }}</p>
                 <ul>
@@ -474,6 +614,20 @@
                     <div class="plot-container">
                         <h4>Group Distributions</h4>
                         <img src="{{ performance_plots[feature].distributions }}" alt="Group Distributions for {{ feature }}">
+                    </div>
+                    {% endif %}
+
+                    {% if performance_plots[feature].calibration %}
+                    <div class="plot-container">
+                        <h4>Calibration Plots</h4>
+                        <img src="{{ performance_plots[feature].calibration }}" alt="Calibration Plots for {{ feature }}" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px;">
+                    </div>
+                    {% endif %}
+
+                    {% if performance_plots[feature].analysis %}
+                    <div class="plot-container">
+                        <h4>Analysis Plots</h4>
+                        <img src="{{ performance_plots[feature].analysis }}" alt="Analysis Plots for {{ feature }}" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px;">
                     </div>
                     {% endif %}
                     

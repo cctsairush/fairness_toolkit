@@ -20,6 +20,7 @@ from .visualization import (
 
 from .reporting import (
     generate_fairness_report,
+    generate_interactive_fairness_report,
     FairnessReporter
 )
 
