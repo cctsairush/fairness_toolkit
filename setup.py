@@ -8,7 +8,7 @@ setup(
     version="0.1.0",
     author="Jonathan Tsai",
     author_email="chuan-ching_tsai@rush.edu",
-    description="A Python package for evaluating and improving fairness in binary classification models",
+    description="A comprehensive Python toolkit for evaluating ML fairness with interactive visualizations",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/cctsairush/fairness_toolkit",

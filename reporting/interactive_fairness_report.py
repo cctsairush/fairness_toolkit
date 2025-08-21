@@ -1,3 +1,8 @@
+"""
+Interactive fairness report with embedded images (no external PNG files).
+All images are embedded as base64-encoded data URIs in the HTML.
+"""
+
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Any, Union
@@ -8,11 +13,12 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 from ..metrics import FairnessMetrics, calculate_all_metrics, calculate_metrics_for_multiple_features, MultipleFairnessMetrics
 from .fairness_report import interpret_metrics, suggest_improvements
+# Removed circular import
 import os
 
 
 class InteractiveFairnessReporter:
-    """Generate interactive fairness reports with support for multiple sensitive features."""
+    """Generate interactive fairness reports with embedded images (no external PNG files)."""
     
     def __init__(self):
         # Load the interactive template
@@ -101,193 +107,124 @@ class InteractiveFairnessReporter:
                 metrics, interpretations, feature_values, feature_name
             )
             
-            # Generate feature masks
+            # Create masks for interactive threshold adjustment
             feature_masks[feature_name] = {}
             for group in unique_groups:
-                group_mask = (feature_values == str(group)).astype(int)
-                feature_masks[feature_name][str(group)] = group_mask.tolist()
-
-
-            # Calculate model performance
+                feature_masks[feature_name][str(group)] = (feature_values == group).tolist()
+            
+            # Calculate model performance by group
             model_performance[feature_name] = self._calculate_model_performance(
                 y_true, y_pred, feature_values, y_prob
             )
             
-            # Store metrics and analysis
-            fairness_metrics[feature_name] = metrics
-            fairness_analysis[feature_name] = self._prepare_metrics_for_template(
-                metrics, interpretations
-            )
+            # Store fairness metrics in format expected by template
+            fairness_metrics[feature_name] = self._format_metrics_for_template(metrics)
+            
+            # Generate fairness analysis
+            fairness_analysis[feature_name] = interpretations
+            
+            # Store recommendations
             recommendations[feature_name] = feature_recommendations
             
-            # Generate plots for this feature
+            # Generate performance plots
             performance_plots[feature_name] = self._generate_performance_plots(
                 y_true, y_pred, feature_values, y_prob, output_path, feature_name
             )
         
-        # Prepare template data
-        template_data = {
+        # Prepare template variables
+        template_vars = {
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'total_samples': len(y_true),
-            'num_features': len(features),
-            'features': features,
-            'y_true': json.dumps(y_true.tolist()),
-            'y_prob': json.dumps(y_prob.tolist()) if y_prob is not None else None,
-            'feature_masks': feature_masks,
             'overall_performance': overall_performance,
-            'technical_analysis': technical_analysis,
+            'features': features,
             'feature_summaries': feature_summaries,
             'feature_stats': feature_stats,
+            'feature_masks': feature_masks,
             'model_performance': model_performance,
             'fairness_metrics': fairness_metrics,
             'fairness_analysis': fairness_analysis,
             'recommendations': recommendations,
-            'performance_plots': performance_plots
+            'performance_plots': performance_plots,
+            'technical_analysis': technical_analysis,
+            'y_true': y_true.tolist(),
+            'y_prob': y_prob.tolist() if y_prob is not None else None
         }
         
-        # Generate HTML report
+        # Render template
         template = Template(self.report_template)
-        html_content = template.render(**template_data)
+        html_content = template.render(**template_vars)
         
         # Save report
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
+        # Return summary
         return {
-            'all_metrics': all_metrics,
             'feature_stats': feature_stats,
             'recommendations': recommendations,
-            'report_path': output_path
+            'output_path': output_path
         }
     
-    def _calculate_fairness_score(self, metrics: FairnessMetrics, heatmap: bool = False):
-        """Calculate an overall fairness score (0-100) based on all 4 metrics.
-            Also used to calculate heatmap values, in which case it returns a list of floats"""
-        scores = []
+    def _calculate_overall_performance(self, y_true: np.ndarray, y_pred: np.ndarray, 
+                                     y_prob: Optional[np.ndarray] = None) -> Dict:
+        """Calculate overall performance metrics."""
+        case_count = int(np.sum(y_true))
+        total_samples = len(y_true)
+        case_percentage = (case_count / total_samples) * 100 if total_samples > 0 else 0
+        
+        accuracy = accuracy_score(y_true, y_pred)
+        auc = roc_auc_score(y_true, y_prob) if y_prob is not None and len(np.unique(y_true)) > 1 else None
+        
+        performance = {
+            'accuracy': accuracy,
+            'precision': precision_score(y_true, y_pred, zero_division=0),
+            'recall': recall_score(y_true, y_pred, zero_division=0),
+            'f1_score': f1_score(y_true, y_pred, zero_division=0),
+            'case_count': case_count,
+            'case_percentage': case_percentage,
+            'total_samples': total_samples,
+            'auc': auc,
+            # Template expects these specific field names
+            'overall_accuracy': accuracy,
+            'overall_auc': auc
+        }
             
-        # 1. Demographic parity score
-        dp_values = list(metrics.demographic_parity.values())
-        if dp_values:
-            dp_variance = np.var(dp_values)
-            dp_score = max(0, 100 - dp_variance * 1000)
-            if heatmap:
-                scores.append(dp_score / 100)
-            else:    
-                scores.append(dp_score)
+        return performance
         
-        # 2. Equalized odds score (using TPR and FPR)
-        tpr_values = []
-        fpr_values = []
-        for group_metrics in metrics.equalized_odds.values():
-            if isinstance(group_metrics, dict):
-                if 'TPR' in group_metrics and not np.isnan(group_metrics['TPR']):
-                    tpr_values.append(group_metrics['TPR'])
-                if 'FPR' in group_metrics and not np.isnan(group_metrics['FPR']):
-                    fpr_values.append(group_metrics['FPR'])
-        
-        equalized_odds_scores = []
-        if tpr_values:
-            tpr_variance = np.var(tpr_values)
-            tpr_score = max(0, 100 - tpr_variance * 1000)
-            equalized_odds_scores.append(tpr_score)
-        
-        if fpr_values:
-            fpr_variance = np.var(fpr_values)
-            fpr_score = max(0, 100 - fpr_variance * 1000)
-            equalized_odds_scores.append(fpr_score)
-        
-        if equalized_odds_scores:
-            eo_score = np.mean(equalized_odds_scores)
-            if heatmap:
-                scores.append(eo_score / 100)
-            else:    
-                scores.append(eo_score)
-        
-        # 3. Calibration parity score (using both PPV and NPV)
-        ppv_values = []
-        npv_values = []
-        for group_metrics in metrics.calibration_parity.values():
-            if isinstance(group_metrics, dict):
-                if 'PPV' in group_metrics and not np.isnan(group_metrics['PPV']):
-                    ppv_values.append(group_metrics['PPV'])
-                if 'NPV' in group_metrics and not np.isnan(group_metrics['NPV']):
-                    npv_values.append(group_metrics['NPV'])
-        
-        calibration_scores = []
-        if ppv_values:
-            ppv_variance = np.var(ppv_values)
-            ppv_score = max(0, 100 - ppv_variance * 1000)
-            calibration_scores.append(ppv_score)
-        
-        if npv_values:
-            npv_variance = np.var(npv_values)
-            npv_score = max(0, 100 - npv_variance * 1000)
-            calibration_scores.append(npv_score)
-        
-        if calibration_scores:
-            cp_score = np.mean(calibration_scores)
-            if heatmap:
-                scores.append(cp_score / 100)
-            else:    
-                scores.append(cp_score)
-        
-        # 4. Disparate impact score (fixed to account for 0.8-1.25 acceptable range)
-        di_values = [v for v in metrics.disparate_impact.values() if not np.isnan(v)]
-        if di_values:
-            # Calculate violations: how far outside the acceptable 0.8-1.25 range
-            violations = []
-            for v in di_values:
-                if v < 0.8:
-                    violations.append(0.8 - v)  # Distance below 0.8
-                elif v > 1.25:
-                    violations.append(v - 1.25)  # Distance above 1.25
-                else:
-                    violations.append(0.0)  # Within acceptable range
-            
-            # Score based on average violation severity
-            avg_violation = np.mean(violations)
-            # More aggressive penalty: even small violations should result in lower scores
-            di_score = max(0, 100 - avg_violation * 400)  # Increased penalty multiplier
-            if heatmap:
-                scores.append(di_score / 100)
-            else:
-                scores.append(di_score)
-        
-        # Return mean of all 4 metric scores
+    def _calculate_fairness_score(self, metrics: FairnessMetrics, heatmap: bool = False) -> Union[float, List[float]]:
+        """Calculate overall fairness score."""
         if heatmap:
+            # Return scores for each metric for heatmap
+            scores = []
+            
+            # Demographic parity score
+            dp_values = list(metrics.demographic_parity.values())
+            dp_score = 1 - (max(dp_values) - min(dp_values)) if len(dp_values) > 1 else 1.0
+            scores.append(max(0, min(1, dp_score)))
+            
+            # Equalized odds score
+            tpr_values = [v['TPR'] for v in metrics.equalized_odds.values() if not np.isnan(v['TPR'])]
+            fpr_values = [v['FPR'] for v in metrics.equalized_odds.values() if not np.isnan(v['FPR'])]
+            
+            tpr_score = 1 - (max(tpr_values) - min(tpr_values)) if len(tpr_values) > 1 else 1.0
+            fpr_score = 1 - (max(fpr_values) - min(fpr_values)) if len(fpr_values) > 1 else 1.0
+            eo_score = (tpr_score + fpr_score) / 2
+            scores.append(max(0, min(1, eo_score)))
+            
+            # Calibration parity score
+            ppv_values = [v['PPV'] for v in metrics.calibration_parity.values() if not np.isnan(v['PPV'])]
+            ppv_score = 1 - (max(ppv_values) - min(ppv_values)) if len(ppv_values) > 1 else 1.0
+            scores.append(max(0, min(1, ppv_score)))
+            
+            # Disparate impact score
+            di_values = [v for v in metrics.disparate_impact.values() if not np.isnan(v)]
+            di_score = min([min(v, 1/v) for v in di_values]) if di_values else 1.0
+            scores.append(max(0, min(1, di_score)))
+            
             return scores
         else:
-            return round(np.mean(scores) if scores else 0, 1)
-        
-    def _generate_technical_analysis(self, features: list[str],
-                                     all_metrics: MultipleFairnessMetrics,
-                                     output_path: str = "interactive_fairness_report.html") -> Dict: 
-        """Generate a summary for all features."""
-        from ..visualization.fairness_plots import plot_heatmap
-
-        # Get base filename without extension
-        base_name = os.path.splitext(output_path)[0]
-
-        metric_names = ['demographic parity', 'equalized odds', 'calibration parity', 'disparate impact']
-
-        fairness_scores = {}
-        for feature in features:
-            metrics = all_metrics.metrics_by_feature[feature]
-            fairness_scores[feature] = self._calculate_fairness_score(metrics, heatmap=True)
-
-        try:
-            # Generate heatmap
-            heatmap_path = f"{base_name}_heatmap.png"
-            plot_heatmap(
-                features=features,
-                metrics=metric_names,
-                fairness_scores=fairness_scores,
-                save_path=heatmap_path,
-            )
-            return {"heatmap": os.path.basename(heatmap_path)}
-        except Exception as e:
-            print(f"Warning: Could not generate heatmap: {e}")
-            return {"heatmap": None}
+            # Calculate single overall score
+            scores = self._calculate_fairness_score(metrics, heatmap=True)
+            return round(np.mean(scores) * 100, 1)
     
     def _generate_feature_summary(self, metrics: FairnessMetrics, interpretations: Dict, 
                                   sensitive_features: np.ndarray, feature_name: str) -> str:
@@ -369,280 +306,133 @@ class InteractiveFairnessReporter:
         performance_data['stratified_performance'] = stratified_performance
         return performance_data
     
+    def _format_metrics_for_template(self, metrics: FairnessMetrics) -> Dict:
+        """Format metrics for template rendering."""
+        return {
+            'demographic_parity': dict(metrics.demographic_parity),
+            'equalized_odds': dict(metrics.equalized_odds),
+            'calibration_parity': dict(metrics.calibration_parity),
+            'disparate_impact': dict(metrics.disparate_impact)
+        }
+    
+    def _generate_technical_analysis(self, features: List[str], all_metrics: MultipleFairnessMetrics, 
+                                    output_path: str = "interactive_fairness_report.html") -> Dict:
+        """Generate technical analysis with embedded heatmap."""
+        from ..visualization.fairness_plots import plot_heatmap
+        
+        metric_names = ['demographic parity', 'equalized odds', 'calibration parity', 'disparate impact']
+        
+        fairness_scores = {}
+        for feature in features:
+            metrics = all_metrics.metrics_by_feature[feature]
+            fairness_scores[feature] = self._calculate_fairness_score(metrics, heatmap=True)
+        
+        try:
+            # Generate heatmap as base64
+            heatmap_base64 = plot_heatmap(
+                features=features,
+                metrics=metric_names,
+                fairness_scores=fairness_scores,
+            )
+            return {"heatmap": heatmap_base64}
+        except Exception as e:
+            print(f"Warning: Could not generate heatmap: {e}")
+            return {"heatmap": None}
+    
     def _generate_performance_plots(self, y_true: np.ndarray, y_pred: np.ndarray, 
                                   sensitive_features: np.ndarray, y_prob: Optional[np.ndarray] = None,
                                   output_path: str = "interactive_fairness_report.html",
                                   feature_name: str = "") -> Dict:
-        """Generate performance visualization plots for a specific feature."""
-        from ..visualization.fairness_plots import plot_group_distributions, plot_confusion_matrices, create_fairness_dashboard, plot_analysis_curves, plot_calibration_curves
+        """Generate performance visualization plots as embedded base64 images."""
+        from ..visualization.fairness_plots import (
+            plot_group_distributions, 
+            plot_confusion_matrices, 
+            create_fairness_dashboard,
+            plot_analysis_curves,
+            plot_calibration_curves
+        )
         
-        # Get base filename without extension
-        base_name = os.path.splitext(output_path)[0]
         plots = {}
         
         try:
-            # Generate group distributions plot
-            distributions_path = f"{base_name}_{feature_name}_distributions.png"
-            plot_group_distributions(
+            # Generate group distributions plot as base64
+            plots['distributions'] = plot_group_distributions(
                 y_true=y_true,
                 y_pred=y_pred,
                 sensitive_features=sensitive_features,
                 y_prob=y_prob,
-                save_path=distributions_path,
                 feature_name=feature_name
             )
-            plots['distributions'] = os.path.basename(distributions_path)
         except Exception as e:
             print(f"Warning: Could not generate distributions plot for {feature_name}: {e}")
             plots['distributions'] = None
-
+        
         if y_prob is not None:
             try:
-                # Generate group calibration plot
-                calibration_path = f"{base_name}_{feature_name}_calibration.png"
-                plot_calibration_curves(
+                # Generate group calibration plot as base64
+                plots['calibration'] = plot_calibration_curves(
                     y_true=y_true,
                     y_prob=y_prob,
                     sensitive_features=sensitive_features,
-                    save_path=calibration_path,
                     feature_name=feature_name
                 )
-                plots['calibration'] = os.path.basename(calibration_path)
             except Exception as e:
                 print(f"Warning: Could not generate calibration plot for {feature_name}: {e}")
                 plots['calibration'] = None
-
+            
             try:
-                # Generate group analysis plot
-                analysis_path = f"{base_name}_{feature_name}_analysis.png"
-                plot_analysis_curves(
+                # Generate group analysis plot as base64
+                plots['analysis'] = plot_analysis_curves(
                     y_true=y_true,
                     y_prob=y_prob,
                     sensitive_features=sensitive_features,
-                    save_path=analysis_path,
                     feature_name=feature_name
                 )
-                plots['analysis'] = os.path.basename(analysis_path)
             except Exception as e:
                 print(f"Warning: Could not generate analysis plot for {feature_name}: {e}")
                 plots['analysis'] = None
         
         try:
-            # Generate confusion matrices plot
-            confusion_path = f"{base_name}_{feature_name}_confusion_matrices.png"
-            plot_confusion_matrices(
+            # Generate confusion matrices plot as base64
+            plots['confusion_matrices'] = plot_confusion_matrices(
                 y_true=y_true,
                 y_pred=y_pred,
                 sensitive_features=sensitive_features,
-                save_path=confusion_path,
                 feature_name=feature_name
             )
-            plots['confusion_matrices'] = os.path.basename(confusion_path)
         except Exception as e:
             print(f"Warning: Could not generate confusion matrices plot for {feature_name}: {e}")
             plots['confusion_matrices'] = None
         
         try:
-            # Generate fairness dashboard
-            dashboard_path = f"{base_name}_{feature_name}_dashboard.png"
+            # Generate fairness dashboard as base64
             metrics = calculate_all_metrics(y_true, y_pred, sensitive_features, y_prob)
-            create_fairness_dashboard(
+            plots['dashboard'] = create_fairness_dashboard(
                 y_true=y_true,
                 y_pred=y_pred,
                 sensitive_features=sensitive_features,
                 y_prob=y_prob,
                 metrics=metrics,
-                save_path=dashboard_path,
                 feature_name=feature_name
             )
-            plots['dashboard'] = os.path.basename(dashboard_path)
         except Exception as e:
             print(f"Warning: Could not generate dashboard plot for {feature_name}: {e}")
             plots['dashboard'] = None
         
         return plots
-    
-    def _calculate_individual_metric_scores(self, metrics: FairnessMetrics) -> Dict:
-        """Calculate individual scores for each fairness metric."""
-        scores = {}
-        
-        # 1. Demographic parity score
-        dp_values = list(metrics.demographic_parity.values())
-        if dp_values:
-            dp_variance = np.var(dp_values)
-            dp_score = max(0, 100 - dp_variance * 1000)
-            scores['demographic_parity'] = round(dp_score, 1)
-        else:
-            scores['demographic_parity'] = None
-        
-        # 2. Equalized odds score (using TPR and FPR)
-        tpr_values = []
-        fpr_values = []
-        for group_metrics in metrics.equalized_odds.values():
-            if isinstance(group_metrics, dict):
-                if 'TPR' in group_metrics and not np.isnan(group_metrics['TPR']):
-                    tpr_values.append(group_metrics['TPR'])
-                if 'FPR' in group_metrics and not np.isnan(group_metrics['FPR']):
-                    fpr_values.append(group_metrics['FPR'])
-        
-        equalized_odds_scores = []
-        if tpr_values:
-            tpr_variance = np.var(tpr_values)
-            tpr_score = max(0, 100 - tpr_variance * 1000)
-            equalized_odds_scores.append(tpr_score)
-        
-        if fpr_values:
-            fpr_variance = np.var(fpr_values)
-            fpr_score = max(0, 100 - fpr_variance * 1000)
-            equalized_odds_scores.append(fpr_score)
-        
-        if equalized_odds_scores:
-            eo_score = np.mean(equalized_odds_scores)
-            scores['equalized_odds'] = round(eo_score, 1)
-        else:
-            scores['equalized_odds'] = None
-        
-        # 3. Calibration parity score (using both PPV and NPV)
-        ppv_values = []
-        npv_values = []
-        for group_metrics in metrics.calibration_parity.values():
-            if isinstance(group_metrics, dict):
-                if 'PPV' in group_metrics and not np.isnan(group_metrics['PPV']):
-                    ppv_values.append(group_metrics['PPV'])
-                if 'NPV' in group_metrics and not np.isnan(group_metrics['NPV']):
-                    npv_values.append(group_metrics['NPV'])
-        
-        calibration_scores = []
-        if ppv_values:
-            ppv_variance = np.var(ppv_values)
-            ppv_score = max(0, 100 - ppv_variance * 1000)
-            calibration_scores.append(ppv_score)
-        
-        if npv_values:
-            npv_variance = np.var(npv_values)
-            npv_score = max(0, 100 - npv_variance * 1000)
-            calibration_scores.append(npv_score)
-        
-        if calibration_scores:
-            cp_score = np.mean(calibration_scores)
-            scores['calibration_parity'] = round(cp_score, 1)
-        else:
-            scores['calibration_parity'] = None
-        
-        # 4. Disparate impact score (fixed to account for 0.8-1.25 acceptable range)
-        di_values = [v for v in metrics.disparate_impact.values() if not np.isnan(v)]
-        if di_values:
-            # Calculate violations: how far outside the acceptable 0.8-1.25 range
-            violations = []
-            for v in di_values:
-                if v < 0.8:
-                    violations.append(0.8 - v)  # Distance below 0.8
-                elif v > 1.25:
-                    violations.append(v - 1.25)  # Distance above 1.25
-                else:
-                    violations.append(0.0)  # Within acceptable range
-            
-            # Score based on average violation severity
-            avg_violation = np.mean(violations)
-            # More aggressive penalty: even small violations should result in lower scores
-            di_score = max(0, 100 - avg_violation * 400)  # Increased penalty multiplier
-            scores['disparate_impact'] = round(di_score, 1)
-        else:
-            scores['disparate_impact'] = None
-        
-        return scores
-
-    def _prepare_metrics_for_template(self, metrics: FairnessMetrics, interpretations: Dict) -> Dict:
-        """Prepare metrics data for template rendering."""
-        
-        # Calculate deviations from average
-        dp_avg = np.mean(list(metrics.demographic_parity.values()))
-        dp_deviations = {k: v - dp_avg for k, v in metrics.demographic_parity.items()}
-        
-        # For equalized odds, calculate deviations for both TPR and FPR
-        tpr_values = [v['TPR'] for v in metrics.equalized_odds.values() if isinstance(v, dict) and 'TPR' in v and not np.isnan(v['TPR'])]
-        fpr_values = [v['FPR'] for v in metrics.equalized_odds.values() if isinstance(v, dict) and 'FPR' in v and not np.isnan(v['FPR'])]
-        
-        tpr_avg = np.mean(tpr_values) if tpr_values else 0
-        fpr_avg = np.mean(fpr_values) if fpr_values else 0
-        
-        eo_deviations = {}
-        for k, v in metrics.equalized_odds.items():
-            if isinstance(v, dict):
-                tpr_dev = v['TPR'] - tpr_avg if 'TPR' in v and not np.isnan(v['TPR']) else np.nan
-                fpr_dev = v['FPR'] - fpr_avg if 'FPR' in v and not np.isnan(v['FPR']) else np.nan
-                eo_deviations[k] = {'TPR': tpr_dev, 'FPR': fpr_dev}
-            else:
-                eo_deviations[k] = {'TPR': np.nan, 'FPR': np.nan}
-        
-        # Calculate individual metric scores
-        individual_scores = self._calculate_individual_metric_scores(metrics)
-        
-        return {
-            'demographic_parity': metrics.demographic_parity,
-            'demographic_parity_deviations': dp_deviations,
-            'demographic_parity_status': self._get_status_class(interpretations['demographic_parity']['severity']),
-            'demographic_parity_interpretation': interpretations['demographic_parity']['interpretation'],
-            'demographic_parity_score': individual_scores['demographic_parity'],
-            
-            'equalized_odds': metrics.equalized_odds,
-            'equalized_odds_deviations': eo_deviations,
-            'equalized_odds_status': self._get_status_class(interpretations['equalized_odds']['severity']),
-            'equalized_odds_interpretation': interpretations['equalized_odds']['interpretation'],
-            'equalized_odds_score': individual_scores['equalized_odds'],
-            
-            'calibration_parity': metrics.calibration_parity,
-            'calibration_parity_status': self._get_status_class(interpretations['calibration_parity']['severity']),
-            'calibration_parity_interpretation': interpretations['calibration_parity']['interpretation'],
-            'calibration_parity_score': individual_scores['calibration_parity'],
-            
-            'disparate_impact': metrics.disparate_impact,
-            'disparate_impact_status': self._get_status_class(interpretations['disparate_impact']['severity']),
-            'disparate_impact_interpretation': interpretations['disparate_impact']['interpretation'],
-            'disparate_impact_score': individual_scores['disparate_impact'],
-        }
-    
-    def _get_status_class(self, severity: str) -> str:
-        """Convert severity to CSS class."""
-        mapping = {
-            'none': 'success',
-            'low': 'success',
-            'medium': 'warning',
-            'high': 'danger'
-        }
-        return mapping.get(severity, 'warning')
-    
-    def _calculate_overall_performance(self, y_true: np.ndarray, y_pred: np.ndarray, 
-                                     y_prob: Optional[np.ndarray] = None) -> Dict:
-        """Calculate overall performance metrics without stratification."""
-        total_samples = len(y_true)
-        case_count = np.sum(y_true)  # Count of true label = 1
-        case_percentage = (case_count / total_samples) * 100 if total_samples > 0 else 0
-        overall_accuracy = accuracy_score(y_true, y_pred)
-        
-        # Calculate AUC if probabilities are available
-        if y_prob is not None and len(np.unique(y_true)) > 1:
-            overall_auc = roc_auc_score(y_true, y_prob)
-        else:
-            overall_auc = np.nan
-        
-        return {
-            'total_samples': total_samples,
-            'case_count': int(case_count),
-            'case_percentage': case_percentage,
-            'overall_accuracy': overall_accuracy,
-            'overall_auc': overall_auc
-        }
 
 
 def generate_interactive_fairness_report(y_true: np.ndarray, 
-                                       y_pred: np.ndarray,
-                                       sensitive_features_dict: Dict[str, np.ndarray],
-                                       y_prob: Optional[np.ndarray] = None,
-                                       output_path: str = "interactive_fairness_report.html",
-                                       privileged_groups: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+                                        y_pred: np.ndarray,
+                                        sensitive_features_dict: Dict[str, np.ndarray],
+                                        y_prob: Optional[np.ndarray] = None,
+                                        output_path: str = "interactive_fairness_report.html",
+                                        privileged_groups: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """
-    Generate an interactive fairness report for multiple sensitive features.
+    Generate an interactive fairness report with all images embedded in the HTML.
+    
+    This function creates a self-contained HTML report without any external image files.
+    All visualizations are embedded as base64-encoded data URIs directly in the HTML.
     
     Parameters:
     -----------
@@ -661,9 +451,14 @@ def generate_interactive_fairness_report(y_true: np.ndarray,
         
     Returns:
     --------
-    dict : Report summary including metrics, interpretations, and recommendations
+    dict : Report summary including metrics, interpretations, and recommendations for all features
     """
     reporter = InteractiveFairnessReporter()
     return reporter.generate_interactive_report(
-        y_true, y_pred, sensitive_features_dict, y_prob, output_path, privileged_groups
+        y_true=y_true,
+        y_pred=y_pred,
+        sensitive_features_dict=sensitive_features_dict,
+        y_prob=y_prob,
+        output_path=output_path,
+        privileged_groups=privileged_groups
     )

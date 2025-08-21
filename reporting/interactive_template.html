@@ -20,10 +20,10 @@
         .warning th { background-color: #856404; }
         .danger th { background-color: #721c24; }
         tr:hover { background-color: #f5f5f5; }
-        .recommendation { background-color: #e7f3ff; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #2196F3; }
+        .recommendation { background-color: #f0f4f7; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #6C757D; }
         .summary-box { background-color: #f0f0f0; padding: 20px; border-radius: 5px; margin: 20px 0; }
         .technical-analysis { background-color: #f0f0f0; padding: 20px; border-radius: 5px; margin: 20px 0; }
-        .metric-value { font-weight: bold; color: #2196F3; }
+        .metric-value { font-weight: bold; color: #495057; }
         .timestamp { color: #666; font-size: 0.9em; }
         .feature-selector { background-color: #f0f0f0; padding: 20px; border-radius: 5px; margin: 20px 0; }
         .feature-selector label { font-weight: bold; margin-right: 10px; font-size: 16px; }
@@ -34,7 +34,7 @@
         .tab-container { background-color: #f0f0f0; padding: 10px; border-radius: 5px; margin: 20px 0; }
         .tab-button { background-color: #ddd; border: none; padding: 10px 20px; cursor: pointer; margin-right: 5px; border-radius: 5px 5px 0 0; font-size: 14px; }
         .tab-button:hover { background-color: #ccc; }
-        .tab-button.active { background-color: #2196f3; color: white; }
+        .tab-button.active { background-color: #5A6C7D; color: white; }
         .tab-content { display: none; padding: 20px; background-color: white; border-radius: 0 5px 5px 5px; }
         .tab-content.active { display: block; }
         .feature-overview { background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin: 10px 0; }
@@ -88,7 +88,7 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         .overall-performance-table th { 
-            background-color: #2196F3; 
+            background-color: #5A6C7D; 
             color: white; 
             padding: 20px; 
             text-align: center; 
@@ -100,7 +100,7 @@
             text-align: center; 
             font-size: 28px; 
             font-weight: bold; 
-            color: #2196F3;
+            color: #495057;
             border-right: 1px solid #e0e0e0;
         }
         .overall-performance-table td:last-child { 
@@ -118,7 +118,7 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .stratified-performance-table th { 
-            background-color: #2196F3; 
+            background-color: #6C757D; 
             color: white; 
             padding: 15px; 
             text-align: center; 
@@ -130,7 +130,7 @@
             text-align: center; 
             font-size: 18px; 
             font-weight: bold; 
-            color: #2196F3;
+            color: #495057;
         }
         .stratified-performance-table tr:nth-child(even) { 
             background-color: #f9f9f9; 
@@ -142,7 +142,7 @@
         
         /* Model Performance Table Styles */
         .model-performance-table th {
-            background-color: #2196F3 !important;
+            background-color: #6C757D !important;
             color: white !important;
         }
         
@@ -406,7 +406,6 @@
             <p>Assessment of individual fairness metrics for each sensitive feature.</p>
             {% if technical_analysis.heatmap %}
                     <div class="plot-container">
-                        <h4>Heat Map</h4>
                         <img src="{{ technical_analysis.heatmap }}" alt="Heat Map for features and metrics" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px;">
                     </div>
             {% endif %}

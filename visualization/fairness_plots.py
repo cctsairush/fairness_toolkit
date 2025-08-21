@@ -1,155 +1,146 @@
-from matplotlib import ticker
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Union, Optional, Tuple
-from sklearn.calibration import LabelEncoder, calibration_curve
-from sklearn.metrics import confusion_matrix, roc_curve
 import matplotlib.gridspec as gridspec
+import matplotlib.ticker as ticker
+import seaborn as sns
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Optional, Tuple, Union
+import io
+import base64
+from sklearn.metrics import confusion_matrix
+
+# Set aesthetic style
+sns.set_style("whitegrid")
+plt.rcParams['font.size'] = 10
+plt.rcParams['axes.labelsize'] = 11
+plt.rcParams['axes.titlesize'] = 12
+plt.rcParams['xtick.labelsize'] = 10
+plt.rcParams['ytick.labelsize'] = 10
+plt.rcParams['legend.fontsize'] = 10
+
+# Define modern color palettes
+PALETTE_MAIN = ['#2E86AB', '#A23B72', '#F18F01', '#C73E1D', '#6C5B7B', '#355C7D']
+PALETTE_PASTEL = ['#A8E6CF', '#DCEDC1', '#FFD3B6', '#FFAAA5', '#FF8B94', '#C8B6E2']
+PALETTE_GRADIENT = ['#667BC6', '#7A86CC', '#8E9AD2', '#A2AED8', '#B6C2DE', '#CAD6E4']
+PALETTE_CONTRAST = ['#264653', '#2A9D8F', '#E9C46A', '#F4A261', '#E76F51']
 
 
-def plot_fairness_metrics(metrics_dict: Dict[str, Dict[str, float]], 
-                         metric_name: str = "Fairness Metrics",
-                         figsize: Tuple[int, int] = (12, 6),
-                         save_path: Optional[str] = None,
-                         feature_name: Optional[str] = None) -> plt.Figure:
-    """
-    Plot fairness metrics as grouped bar charts.
+def figure_to_base64(fig):
+    """Convert a matplotlib figure to base64 string."""
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format='png', dpi=150, bbox_inches='tight', facecolor='white')
+    buffer.seek(0)
+    img_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+    buffer.close()
+    plt.close(fig)
+    return f"data:image/png;base64,{img_base64}"
+
+
+def add_value_labels(ax, bars, format_str='{:.2f}', offset=0.01, fontsize=9):
+    """Add value labels on top of bars."""
+    for bar in bars:
+        height = bar.get_height()
+        if not np.isnan(height) and height != 0:
+            label = format_str.format(height)
+            ax.text(bar.get_x() + bar.get_width()/2., height + offset,
+                   label, ha='center', va='bottom', fontsize=fontsize, fontweight='bold')
+
+
+def plot_fairness_metrics(metrics_dict: Dict[str, float], 
+                         metric_name: str = "Fairness Metric",
+                         figsize: Tuple[int, int] = (10, 6)) -> str:
+    """Plot fairness metrics with enhanced visuals."""
+    fig = plt.figure(figsize=figsize, facecolor='white')
     
-    Parameters:
-    -----------
-    metrics_dict : dict
-        Dictionary of metrics with groups as keys
-    metric_name : str
-        Title for the plot
-    figsize : tuple
-        Figure size
-    save_path : str, optional
-        Path to save the figure
-        
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-    """
-    # Convert to DataFrame for easier plotting
-    df = pd.DataFrame(metrics_dict).T
+    groups = list(metrics_dict.keys())
+    values = list(metrics_dict.values())
     
-    fig, ax = plt.subplots(figsize=figsize)
+    # Create bar plot with modern colors
+    bars = plt.bar(groups, values, color=PALETTE_MAIN[0], alpha=0.85, edgecolor='white', linewidth=2)
     
-    # Create bar plot
-    df.plot(kind='bar', ax=ax, width=0.8)
+    # Add value labels
+    add_value_labels(plt.gca(), bars, format_str='{:.3f}', offset=0.01)
     
-    title = f'{metric_name} by Group'
-    if feature_name:
-        title = f'{metric_name} by {feature_name}'
-    ax.set_title(title, fontsize=16, fontweight='bold')
-    ax.set_xlabel(f'{feature_name if feature_name else "Group"}', fontsize=12)
-    ax.set_ylabel('Value', fontsize=12)
-    ax.legend(title='Metrics', bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax.grid(True, alpha=0.3, axis='y')
+    plt.xlabel('Group', fontweight='bold')
+    plt.ylabel('Metric Value', fontweight='bold')
+    plt.title(metric_name, fontweight='bold', pad=15)
+    plt.grid(True, alpha=0.2, linestyle='--')
     
     # Add horizontal line at 1 for reference (perfect fairness for ratios)
     if 'disparate_impact' in metric_name.lower():
-        ax.axhline(y=1, color='red', linestyle='--', alpha=0.5, label='Perfect Fairness')
+        plt.axhline(y=1, color='red', linestyle='--', alpha=0.5, label='Perfect Fairness')
+        plt.legend()
     
     # Rotate x-axis labels if needed
-    plt.xticks(rotation=45 if len(metrics_dict) > 5 else 0)
+    if len(groups) > 5:
+        plt.xticks(rotation=45)
     
     plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
-    return fig
+    return figure_to_base64(fig)
 
-def plot_heatmap(features: list[str], metrics: list[str], 
-                 fairness_scores: Dict[str, list[float]],
-                 figsize: Tuple[int, int] = (15, 5),
-                 save_path: Optional[str] = None)  -> plt.Figure:
-    """
-    Plot heatmap of fairness metrics.
+
+def plot_heatmap(features: list, metrics: list,
+                fairness_scores: Dict,
+                figsize: Tuple[int, int] = (15, 5)) -> str:
+    """Plot heatmap with enhanced colors - red at 0.8, green at 1.0."""
+    fig = plt.figure(figsize=figsize, facecolor='white')
     
-    Parameters:
-    -----------
-    features : list
-        List of feature names
-    metrics : list
-        List of fairness metrics
-    fairness_scores : dict
-        Dictionary of fairness scores with groups as keys
-    save_path : str, optional
-        Path to save the figure
-        
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-    """
     # Convert scores to numpy array
     scores = np.array([fairness_scores[feature] for feature in fairness_scores.keys()])
-
-    # Create heatmap
-    fig = plt.figure(figsize=figsize)
-    sns.heatmap(scores.T, vmin=0, vmax=1, annot=True, cmap='RdYlGn', fmt='.2f', xticklabels=features, yticklabels=metrics)
+    
+    # Create custom colormap: Green (1.0) -> Red (0.8) for professional contrast
+    from matplotlib.colors import LinearSegmentedColormap
+    colors = ['#C62828', '#FF9800', '#FFEB3B', '#4CAF50', '#1B5E20'] 
+    n_bins = 100
+    cmap = LinearSegmentedColormap.from_list('fairness', colors, N=n_bins)
+    
+    # Create heatmap with adjusted scale (0.8 to 1.0)
+    ax = sns.heatmap(scores.T, vmin=0.8, vmax=1.0, annot=True, cmap=cmap, 
+                     fmt='.2f', xticklabels=features, yticklabels=metrics,
+                     cbar_kws={'label': 'Fairness Score', 'ticks': [0.8, 0.85, 0.9, 0.95, 1.0]}, 
+                     linewidths=2, linecolor='white',
+                     annot_kws={'fontsize': 10, 'fontweight': 'bold'})
     
     # Set title and labels
-    plt.title('Fairness Scores Heatmap')
-    plt.ylabel('Metrics')
-    plt.xlabel('Features')
+    plt.title('Fairness Scores Heatmap', fontsize=16, fontweight='bold', pad=20)
+    plt.ylabel('Metrics', fontweight='bold', fontsize=12)
+    plt.xlabel('Features', fontweight='bold', fontsize=12)
+    
+    # Add note about scale
+    plt.text(0.5, -0.15, 'Scale: 0.8 (Poor) to 1.0 (Perfect)', 
+             ha='center', va='top', transform=ax.transAxes, 
+             fontsize=9, style='italic', color='#666')
+    
     plt.tight_layout()
     
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-
-    return fig
+    return figure_to_base64(fig)
 
 
-def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray, 
+def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray,
                            sensitive_features: np.ndarray,
                            y_prob: Optional[np.ndarray] = None,
-                           figsize: Tuple[int, int] = (15, 5),
-                           save_path: Optional[str] = None,
-                           feature_name: Optional[str] = None) -> plt.Figure:
-    """
-    Plot distributions of predictions and outcomes by group.
-    
-    Parameters:
-    -----------
-    y_true : array-like
-        True binary labels
-    y_pred : array-like
-        Predicted binary labels
-    sensitive_features : array-like
-        Sensitive attribute values
-    y_prob : array-like, optional
-        Predicted probabilities
-    figsize : tuple
-        Figure size
-    save_path : str, optional
-        Path to save the figure
-        
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-    """
+                           figsize: Tuple[int, int] = (16, 5),
+                           feature_name: Optional[str] = None) -> str:
+    """Plot group distributions with enhanced visuals and data labels."""
     groups = np.unique(sensitive_features)
     n_groups = len(groups)
     
-    fig = plt.figure(figsize=figsize)
+    fig = plt.figure(figsize=figsize, facecolor='white')
     
     # Create subplots
     if y_prob is not None:
-        gs = gridspec.GridSpec(1, 3, figure=fig)
+        gs = gridspec.GridSpec(1, 3, figure=fig, hspace=0.3, wspace=0.3)
     else:
-        gs = gridspec.GridSpec(1, 2, figure=fig)
+        gs = gridspec.GridSpec(1, 2, figure=fig, hspace=0.3, wspace=0.3)
     
-    # Plot 1: Actual vs Predicted by Group
+    # Plot 1: Actual vs Predicted by Group with data labels
     ax1 = fig.add_subplot(gs[0])
     
     data_actual = []
     data_pred = []
     group_labels = []
-    
     
     for group in groups:
         mask = sensitive_features == group
@@ -160,29 +151,49 @@ def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray,
     x = np.arange(len(group_labels))
     width = 0.35
     
-    ax1.bar(x - width/2, data_actual, width, label='Actual', alpha=0.8)
-    ax1.bar(x + width/2, data_pred, width, label='Predicted', alpha=0.8)
+    # Use modern colors
+    bars1 = ax1.bar(x - width/2, data_actual, width, label='Actual', 
+                    color=PALETTE_MAIN[0], alpha=0.85, edgecolor='white', linewidth=2)
+    bars2 = ax1.bar(x + width/2, data_pred, width, label='Predicted', 
+                    color=PALETTE_MAIN[1], alpha=0.85, edgecolor='white', linewidth=2)
     
-    ax1.set_xlabel(f'{feature_name if feature_name else "Group"}')
-    ax1.set_ylabel('Positive Rate')
+    # Add value labels
+    add_value_labels(ax1, bars1, format_str='{:.1%}', offset=0.01)
+    add_value_labels(ax1, bars2, format_str='{:.1%}', offset=0.01)
+    
+    ax1.set_xlabel(f'{feature_name if feature_name else "Group"}', fontweight='bold')
+    ax1.set_ylabel('Positive Rate', fontweight='bold')
     title = 'Actual vs Predicted Positive Rates by Group'
     if feature_name:
         title = f'Actual vs Predicted Positive Rates by {feature_name}'
-    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
-    ax1.set_title(title)
+    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))
+    ax1.set_title(title, fontweight='bold', pad=15)
     ax1.set_xticks(x)
     ax1.set_xticklabels(group_labels)
-    ax1.legend()
-    ax1.grid(True, alpha=0.3, axis='y')
+    ax1.legend(frameon=True, fancybox=True, shadow=True)
+    ax1.grid(True, alpha=0.2, linestyle='--')
+    ax1.set_ylim([0, max(max(data_actual), max(data_pred)) * 1.15])
     
-    # Plot 2: Confusion Matrix Metrics by Group
+    # Plot 2: Classification Metrics by Group with data labels
     ax2 = fig.add_subplot(gs[1])
     
     metrics_data = {'TPR': [], 'FPR': [], 'PPV': [], 'NPV': []}
     
     for group in groups:
         mask = sensitive_features == group
-        tn, fp, fn, tp = confusion_matrix(y_true[mask], y_pred[mask]).ravel()
+        y_true_group = y_true[mask]
+        y_pred_group = y_pred[mask]
+        
+        if len(np.unique(y_true_group)) > 1 and len(np.unique(y_pred_group)) > 1:
+            tn, fp, fn, tp = confusion_matrix(y_true_group, y_pred_group).ravel()
+        else:
+            # Handle edge cases where confusion matrix might not be 2x2
+            tn = fp = fn = tp = 0
+            if len(y_true_group) > 0:
+                if np.all(y_true_group == 0) and np.all(y_pred_group == 0):
+                    tn = len(y_true_group)
+                elif np.all(y_true_group == 1) and np.all(y_pred_group == 1):
+                    tp = len(y_true_group)
         
         tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
         fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
@@ -194,25 +205,45 @@ def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray,
         metrics_data['PPV'].append(ppv)
         metrics_data['NPV'].append(npv)
     
+    # Create grouped bar chart with custom colors
     metrics_df = pd.DataFrame(metrics_data, index=group_labels)
-    metrics_df.plot(kind='bar', ax=ax2, width=0.8)
+    bar_width = 0.8 / len(metrics_data)
+    x_pos = np.arange(len(group_labels))
     
-    ax2.set_xlabel(f'{feature_name if feature_name else "Group"}')
-    ax2.set_ylabel('Rate')
+    colors = PALETTE_CONTRAST[:4]
+    for i, (metric, values) in enumerate(metrics_data.items()):
+        offset = bar_width * (i - len(metrics_data)/2 + 0.5)
+        bars = ax2.bar(x_pos + offset, values, bar_width, label=metric, 
+                      color=colors[i], alpha=0.85, edgecolor='white', linewidth=1.5)
+        
+        # Add value labels on bars
+        for bar, val in zip(bars, values):
+            if not np.isnan(val) and val > 0:
+                ax2.text(bar.get_x() + bar.get_width()/2., val + 0.01,
+                        f'{val:.1%}', ha='center', va='bottom', fontsize=8, fontweight='bold')
+    
+    ax2.set_xlabel(f'{feature_name if feature_name else "Group"}', fontweight='bold')
+    ax2.set_ylabel('Rate', fontweight='bold')
     title = 'Classification Metrics by Group'
     if feature_name:
         title = f'Classification Metrics by {feature_name}'
-    ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
-    ax2.set_title(title)
-    ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax2.grid(True, alpha=0.3, axis='y')
+    ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))
+    ax2.set_title(title, fontweight='bold', pad=15)
+    ax2.set_xticks(x_pos)
     ax2.set_xticklabels(group_labels, rotation=45 if len(group_labels) > 5 else 0)
+    ax2.legend(loc='upper right', frameon=True, fancybox=True, shadow=True)
+    ax2.grid(True, alpha=0.2, linestyle='--')
+    ax2.set_ylim([0, 1.15])
     
     # Plot 3: Probability Distributions (if available)
     if y_prob is not None:
         ax3 = fig.add_subplot(gs[2])
         
-        for group in groups:
+        # Use different colors for each group
+        colors_pos = PALETTE_MAIN[:n_groups]
+        colors_neg = PALETTE_PASTEL[:n_groups]
+        
+        for i, group in enumerate(groups):
             mask = sensitive_features == group
             
             # Plot positive class probabilities
@@ -220,287 +251,65 @@ def plot_group_distributions(y_true: np.ndarray, y_pred: np.ndarray,
             neg_mask = y_true[mask] == 0
             
             if np.sum(pos_mask) > 0:
-                ax3.hist(y_prob[mask][pos_mask], bins=20, alpha=0.5, 
-                        label=f'{group} (Positive)', density=True)
+                ax3.hist(y_prob[mask][pos_mask], bins=20, alpha=0.6, 
+                        label=f'{group} (Positive)', density=True, 
+                        color=colors_pos[i % len(colors_pos)], edgecolor='white', linewidth=1)
             if np.sum(neg_mask) > 0:
-                ax3.hist(y_prob[mask][neg_mask], bins=20, alpha=0.5, 
-                        label=f'{group} (Negative)', density=True)
+                ax3.hist(y_prob[mask][neg_mask], bins=20, alpha=0.4, 
+                        label=f'{group} (Negative)', density=True,
+                        color=colors_neg[i % len(colors_neg)], edgecolor='gray', linewidth=0.5)
         
-        ax3.set_xlabel('Predicted Probability')
-        ax3.set_ylabel('Density')
+        ax3.set_xlabel('Predicted Probability', fontweight='bold')
+        ax3.set_ylabel('Density', fontweight='bold')
         title = 'Probability Distributions by Group and Class'
         if feature_name:
             title = f'Probability Distributions by {feature_name} and Class'
-        ax3.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
-        ax3.set_title(title)
-        ax3.legend()
-        ax3.grid(True, alpha=0.3)
+        ax3.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))
+        ax3.set_title(title, fontweight='bold', pad=15)
+        ax3.legend(frameon=True, fancybox=True, shadow=True)
+        ax3.grid(True, alpha=0.2, linestyle='--')
     
     plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
-    return fig
+    return figure_to_base64(fig)
 
 
-def plot_calibration_curves(y_true: np.ndarray, y_prob: np.ndarray,
-                          sensitive_features: np.ndarray,
-                          n_bins: int = 10,
-                          figsize: Tuple[int, int] = (12, 6),
-                          save_path: Optional[str] = None,
-                          feature_name: Optional[str] = None) -> plt.Figure:
-    """
-    Plot calibration curves for each group.
-    
-    Parameters:
-    -----------
-    y_true : array-like
-        True binary labels
-    y_prob : array-like
-        Predicted probabilities
-    sensitive_features : array-like
-        Sensitive attribute values
-    n_bins : int
-        Number of bins for calibration curve
-    figsize : tuple
-        Figure size
-    save_path : str, optional
-        Path to save the figure
-        
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-    """
-    groups = np.unique(sensitive_features)
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
-    
-    # Plot calibration curves
-    for group in groups:
-        mask = sensitive_features == group
-        
-        if np.sum(mask) > n_bins:  # Need enough samples
-            fraction_of_positives, mean_predicted_value = calibration_curve(
-                y_true[mask], y_prob[mask], n_bins=n_bins
-            )
-            
-            ax1.plot(mean_predicted_value, fraction_of_positives, 
-                    marker='o', label=f'Group {group}', linewidth=2)
-    
-    # Perfect calibration line
-    ax1.plot([0, 1], [0, 1], 'k:', label='Perfect Calibration')
-    
-    ax1.set_xlabel('Mean Predicted Probability')
-    ax1.set_ylabel('Fraction of Positives')
-    title = 'Calibration Curves by Group'
-    if feature_name:
-        title = f'Calibration Curves by {feature_name}'
-    ax1.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
-    ax1.set_title(title)
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-    ax1.set_xlim([0, 1])
-    ax1.set_ylim([0, 1])
-    
-    # Plot calibration error bars
-    calibration_errors = []
-    group_names = []
-    
-    for group in groups:
-        mask = sensitive_features == group
-        
-        if np.sum(mask) > n_bins:
-            fraction_of_positives, mean_predicted_value = calibration_curve(
-                y_true[mask], y_prob[mask], n_bins=n_bins
-            )
-            
-            # Calculate expected calibration error (ECE)
-            bin_counts, _ = np.histogram(y_prob[mask], bins=n_bins, range=(0, 1))
-            ece = np.sum(np.abs(fraction_of_positives - mean_predicted_value) * 
-                        bin_counts) / np.sum(bin_counts)
-            
-            calibration_errors.append(ece)
-            group_names.append(str(group))
-    
-    ax2.bar(group_names, calibration_errors, alpha=0.7)
-    ax2.set_xlabel(f'{feature_name if feature_name else "Group"}')
-    ax2.set_ylabel('Expected Calibration Error')
-    title = 'Calibration Error by Group'
-    if feature_name:
-        title = f'Calibration Error by {feature_name}'
-    ax2.set_title(title)
-    ax2.grid(True, alpha=0.3, axis='y')
-    
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
-    return fig
-
-def plot_analysis_curves(y_true: np.ndarray, y_prob: np.ndarray,
-                     sensitive_features: np.ndarray,
-                     n_bins: int = 10,
-                     figsize: Tuple[int, int] = (12, 6),
-                     save_path: Optional[str] = None,
-                     feature_name: Optional[str] = None) -> plt.Figure:
-    """    Plot ROC AUC scores for each group.
-    
-    Parameters:
-    -----------
-    y_true : array-like
-        True binary labels
-    y_prob : array-like
-        Predicted probabilities
-    sensitive_features : array-like
-        Sensitive attribute values
-    n_bins : int
-        Number of bins for ROC curve
-    figsize : tuple
-        Figure size
-    save_path : str, optional
-        Path to save the figure
-        
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-    """
-    groups = np.unique(sensitive_features)
-    
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
-    
-    # Plot roc curves
-    for group in groups:
-        mask = sensitive_features == group
-        
-        fpr, tpr, thresholds = roc_curve(
-            y_true[mask], y_prob[mask]
-        )
-            
-        ax1.plot(fpr, tpr, label=f'Group {group}', linewidth=2)
-    
-
-    
-    ax1.set_xlabel('False Positive Rate')
-    ax1.set_ylabel('True Positive Rate')
-    title = 'ROC Curves by Group'
-    if feature_name:
-        title = f'ROC Curves by {feature_name}'
-    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
-    ax1.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages    
-    ax1.set_title(title)
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-    ax1.set_xlim([0, 1])
-    ax1.set_ylim([0, 1])
-
-
-    # Plot net benefit
-    thresholds = np.linspace(0, .5, n_bins)
-    for group in groups:
-        mask = sensitive_features == group
-        net_benefits = np.zeros(n_bins)
-        for i, threshold in enumerate(thresholds):
-            y_pred_group = (y_prob[mask] >= threshold).astype(int)
-            tp = np.sum(y_true[mask] * y_pred_group)
-            fp = np.sum((1 - y_true[mask]) * y_pred_group)
-            n = len(y_true[mask])
-
-            net_benefit = (tp - fp * (threshold / (1 - threshold))) / n
-            net_benefits[i] = net_benefit
-        ax2.plot(thresholds, net_benefits, label=f'Group {group}', linewidth=2)
-
-    # Add the "Treat All" and "Treat None" lines
-    prevalence = np.mean(y_true)
-    net_benefit = prevalence - (1 - prevalence) * thresholds / (1 -thresholds)
-    ax2.plot(thresholds, net_benefit, label='Treat All')
-    ax2.axhline(y=0, linestyle=':', label='Treat None')
-
-
-    ax2.set_xlim([0, .35])  # Set x-axis limits
-    ax2.set_ylim([-0.1, .25])  # Set y-axis limits
-    ax2.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f"{x*100:.0f}%"))  # Format x-axis tick labels as percentages
-    ax2.set_xlabel('Threshold')
-    ax2.set_ylabel('Net Benefit')
-    title = 'DCA Curves by Group'
-    if feature_name:
-        title = f'DCA Curves by {feature_name}'
-    ax2.set_title(title)
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
-
-    
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
-    return fig
-    
 def plot_confusion_matrices(y_true: np.ndarray, y_pred: np.ndarray,
                           sensitive_features: np.ndarray,
-                          figsize: Optional[Tuple[int, int]] = None,
-                          save_path: Optional[str] = None,
-                          feature_name: Optional[str] = None) -> plt.Figure:
-    """
-    Plot confusion matrices for each group.
-    
-    Parameters:
-    -----------
-    y_true : array-like
-        True binary labels
-    y_pred : array-like
-        Predicted binary labels
-    sensitive_features : array-like
-        Sensitive attribute values
-    figsize : tuple, optional
-        Figure size (auto-calculated if None)
-    save_path : str, optional
-        Path to save the figure
-        
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-    """
+                          figsize: Tuple[int, int] = (15, 5),
+                          feature_name: Optional[str] = None) -> str:
+    """Plot confusion matrices with enhanced visuals."""
     groups = np.unique(sensitive_features)
     n_groups = len(groups)
     
-    # Calculate figure size if not provided
-    if figsize is None:
-        cols = min(3, n_groups)
-        rows = (n_groups + cols - 1) // cols
-        figsize = (5 * cols, 5 * rows)
+    # Create subplots layout
+    cols = min(n_groups, 4)
+    rows = (n_groups + cols - 1) // cols
     
-    fig, axes = plt.subplots(rows, cols, figsize=figsize)
-    
-    if n_groups == 1:
-        axes = [axes]
-    elif rows == 1 or cols == 1:
-        axes = axes.flatten()
-    else:
-        axes = axes.flatten()
+    fig = plt.figure(figsize=figsize, facecolor='white')
     
     for idx, group in enumerate(groups):
         mask = sensitive_features == group
-        cm = confusion_matrix(y_true[mask], y_pred[mask])
+        y_true_group = y_true[mask]
+        y_pred_group = y_pred[mask]
         
-        # Normalize confusion matrix
-        cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        ax = fig.add_subplot(rows, cols, idx + 1)
         
-        # Plot
-        sns.heatmap(cm_normalized, annot=cm, fmt='d', cmap='Blues',
-                   ax=axes[idx], cbar=True,
-                   xticklabels=['Negative', 'Positive'],
-                   yticklabels=['Negative', 'Positive'])
+        # Calculate confusion matrix
+        cm = confusion_matrix(y_true_group, y_pred_group)
         
-        axes[idx].set_title(f'Group {group}')
-        axes[idx].set_ylabel('True Label')
-        axes[idx].set_xlabel('Predicted Label')
+        # Create heatmap
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
+                   cbar=False, square=True,
+                   xticklabels=['Predicted 0', 'Predicted 1'],
+                   yticklabels=['Actual 0', 'Actual 1'])
+        
+        ax.set_title(f'{group}\n(n={len(y_true_group)})', fontweight='bold')
+        ax.set_xlabel('Predicted')
+        ax.set_ylabel('Actual')
     
     # Hide extra subplots
-    for idx in range(n_groups, len(axes)):
-        axes[idx].set_visible(False)
+    for idx in range(n_groups, rows * cols):
+        fig.add_subplot(rows, cols, idx + 1).set_visible(False)
     
     title = 'Confusion Matrices by Group'
     if feature_name:
@@ -508,10 +317,149 @@ def plot_confusion_matrices(y_true: np.ndarray, y_pred: np.ndarray,
     plt.suptitle(title, fontsize=16, fontweight='bold')
     plt.tight_layout()
     
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    return figure_to_base64(fig)
+
+
+def plot_calibration_curves(y_true: np.ndarray, y_prob: np.ndarray,
+                          sensitive_features: np.ndarray,
+                          n_bins: int = 10,
+                          figsize: Tuple[int, int] = (12, 5),
+                          feature_name: Optional[str] = None) -> str:
+    """Plot calibration curves with enhanced visuals."""
+    groups = np.unique(sensitive_features)
     
-    return fig
+    fig = plt.figure(figsize=figsize, facecolor='white')
+    
+    for i, group in enumerate(groups):
+        mask = sensitive_features == group
+        y_true_group = y_true[mask]
+        y_prob_group = y_prob[mask]
+        
+        if len(y_true_group) == 0:
+            continue
+            
+        # Calculate calibration curve
+        bin_boundaries = np.linspace(0, 1, n_bins + 1)
+        bin_lowers = bin_boundaries[:-1]
+        bin_uppers = bin_boundaries[1:]
+        
+        ece = 0
+        for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+            in_bin = (y_prob_group > bin_lower) & (y_prob_group <= bin_upper)
+            prop_in_bin = in_bin.mean()
+            
+            if prop_in_bin > 0:
+                accuracy_in_bin = y_true_group[in_bin].mean()
+                avg_confidence_in_bin = y_prob_group[in_bin].mean()
+                ece += np.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+        
+        # Plot calibration curve
+        plt.plot([0, 1], [0, 1], 'k--', alpha=0.5, label='Perfect Calibration' if i == 0 else '')
+        
+        # Create bins and plot
+        bin_centers = (bin_lowers + bin_uppers) / 2
+        accuracies = []
+        
+        for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+            in_bin = (y_prob_group > bin_lower) & (y_prob_group <= bin_upper)
+            if in_bin.sum() > 0:
+                accuracies.append(y_true_group[in_bin].mean())
+            else:
+                accuracies.append(np.nan)
+        
+        color = PALETTE_MAIN[i % len(PALETTE_MAIN)]
+        plt.plot(bin_centers, accuracies, 'o-', color=color, 
+                label=f'{group} (ECE: {ece:.3f})', linewidth=2, markersize=6)
+    
+    plt.xlabel('Mean Predicted Probability', fontweight='bold')
+    plt.ylabel('Fraction of Positives', fontweight='bold')
+    title = 'Calibration Curves by Group'
+    if feature_name:
+        title = f'Calibration Curves by {feature_name}'
+    plt.title(title, fontweight='bold', pad=15)
+    plt.legend(frameon=True, fancybox=True, shadow=True)
+    plt.grid(True, alpha=0.2, linestyle='--')
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+    
+    plt.tight_layout()
+    return figure_to_base64(fig)
+
+
+def plot_analysis_curves(y_true: np.ndarray, y_prob: np.ndarray,
+                       sensitive_features: np.ndarray,
+                       figsize: Tuple[int, int] = (20, 5),
+                       feature_name: Optional[str] = None) -> str:
+    """Plot analysis curves with enhanced visuals."""
+    from sklearn.metrics import roc_curve, precision_recall_curve, roc_auc_score
+    
+    groups = np.unique(sensitive_features)
+    n_groups = len(groups)
+    
+    fig = plt.figure(figsize=figsize, facecolor='white')
+    
+    # ROC Curves
+    ax1 = fig.add_subplot(1, 3, 1)
+    for i, group in enumerate(groups):
+        mask = sensitive_features == group
+        y_true_group = y_true[mask]
+        y_prob_group = y_prob[mask]
+        
+        if len(np.unique(y_true_group)) > 1:
+            fpr, tpr, _ = roc_curve(y_true_group, y_prob_group)
+            auc_score = roc_auc_score(y_true_group, y_prob_group)
+            color = PALETTE_MAIN[i % len(PALETTE_MAIN)]
+            ax1.plot(fpr, tpr, color=color, linewidth=2,
+                    label=f'{group} (AUC: {auc_score:.3f})')
+    
+    ax1.plot([0, 1], [0, 1], 'k--', alpha=0.5)
+    ax1.set_xlabel('False Positive Rate', fontweight='bold')
+    ax1.set_ylabel('True Positive Rate', fontweight='bold')
+    ax1.set_title('ROC Curves', fontweight='bold')
+    ax1.legend(frameon=True, fancybox=True, shadow=True)
+    ax1.grid(True, alpha=0.2, linestyle='--')
+    
+    # Precision-Recall Curves
+    ax2 = fig.add_subplot(1, 3, 2)
+    for i, group in enumerate(groups):
+        mask = sensitive_features == group
+        y_true_group = y_true[mask]
+        y_prob_group = y_prob[mask]
+        
+        if len(np.unique(y_true_group)) > 1:
+            precision, recall, _ = precision_recall_curve(y_true_group, y_prob_group)
+            color = PALETTE_MAIN[i % len(PALETTE_MAIN)]
+            ax2.plot(recall, precision, color=color, linewidth=2, label=f'{group}')
+    
+    ax2.set_xlabel('Recall', fontweight='bold')
+    ax2.set_ylabel('Precision', fontweight='bold')
+    ax2.set_title('Precision-Recall Curves', fontweight='bold')
+    ax2.legend(frameon=True, fancybox=True, shadow=True)
+    ax2.grid(True, alpha=0.2, linestyle='--')
+    
+    # Score Distributions
+    ax3 = fig.add_subplot(1, 3, 3)
+    for i, group in enumerate(groups):
+        mask = sensitive_features == group
+        y_prob_group = y_prob[mask]
+        color = PALETTE_MAIN[i % len(PALETTE_MAIN)]
+        ax3.hist(y_prob_group, bins=20, alpha=0.6, label=f'{group}', 
+                color=color, density=True, edgecolor='white', linewidth=1)
+    
+    ax3.set_xlabel('Predicted Probability', fontweight='bold')
+    ax3.set_ylabel('Density', fontweight='bold')
+    ax3.set_title('Score Distributions', fontweight='bold')
+    ax3.legend(frameon=True, fancybox=True, shadow=True)
+    ax3.grid(True, alpha=0.2, linestyle='--')
+    
+    # Main title
+    title = 'Analysis Curves by Group'
+    if feature_name:
+        title = f'Analysis Curves by {feature_name}'
+    plt.suptitle(title, fontsize=16, fontweight='bold')
+    
+    plt.tight_layout()
+    return figure_to_base64(fig)
 
 
 def create_fairness_dashboard(y_true: np.ndarray, y_pred: np.ndarray,
@@ -519,76 +467,124 @@ def create_fairness_dashboard(y_true: np.ndarray, y_pred: np.ndarray,
                             y_prob: Optional[np.ndarray] = None,
                             metrics: Optional[Dict] = None,
                             figsize: Tuple[int, int] = (20, 15),
-                            save_path: Optional[str] = None,
-                            feature_name: Optional[str] = None) -> plt.Figure:
-    """
-    Create a comprehensive fairness dashboard with multiple visualizations.
-    
-    Parameters:
-    -----------
-    y_true : array-like
-        True binary labels
-    y_pred : array-like
-        Predicted binary labels
-    sensitive_features : array-like
-        Sensitive attribute values
-    y_prob : array-like, optional
-        Predicted probabilities
-    metrics : dict, optional
-        Pre-calculated fairness metrics
-    figsize : tuple
-        Figure size
-    save_path : str, optional
-        Path to save the figure
-        
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-    """
-    fig = plt.figure(figsize=figsize)
-    gs = gridspec.GridSpec(3, 2, figure=fig, hspace=0.3, wspace=0.3)
+                            feature_name: Optional[str] = None) -> str:
+    """Create enhanced fairness dashboard with data labels and better colors."""
+    fig = plt.figure(figsize=figsize, facecolor='white')
+    gs = gridspec.GridSpec(3, 2, figure=fig, hspace=0.35, wspace=0.35)
     
     # If metrics not provided, calculate them
     if metrics is None:
         from ..metrics import calculate_all_metrics
         metrics = calculate_all_metrics(y_true, y_pred, sensitive_features, y_prob)
     
-    # 1. Demographic Parity
+    # 1. Demographic Parity with data labels
     ax1 = fig.add_subplot(gs[0, 0])
-    df_demo = pd.DataFrame({'Demographic Parity': metrics.demographic_parity})
-    df_demo.plot(kind='bar', ax=ax1, legend=False, color='skyblue')
-    ax1.set_title('Demographic Parity', fontweight='bold')
-    ax1.set_ylabel('Positive Prediction Rate')
-    ax1.grid(True, alpha=0.3, axis='y')
+    demo_values = list(metrics.demographic_parity.values())
+    demo_labels = list(metrics.demographic_parity.keys())
+    bars1 = ax1.bar(demo_labels, demo_values, color=PALETTE_GRADIENT[2], 
+                    alpha=0.85, edgecolor='white', linewidth=2)
     
-    # 2. Disparate Impact
+    # Add value labels
+    for bar, val in zip(bars1, demo_values):
+        ax1.text(bar.get_x() + bar.get_width()/2., val + 0.01,
+                f'{val:.3f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    ax1.set_title('Demographic Parity', fontweight='bold', fontsize=14, pad=15)
+    ax1.set_ylabel('Positive Prediction Rate', fontweight='bold')
+    ax1.set_xlabel(f'{feature_name if feature_name else "Group"}', fontweight='bold')
+    ax1.grid(True, alpha=0.2, linestyle='--')
+    ax1.set_ylim([0, max(demo_values) * 1.15 if demo_values else 1])
+    
+    # 2. Disparate Impact with data labels
     ax2 = fig.add_subplot(gs[0, 1])
-    df_di = pd.DataFrame({'Disparate Impact': metrics.disparate_impact})
-    df_di.plot(kind='bar', ax=ax2, legend=False, color='lightgreen')
-    ax2.axhline(y=1, color='red', linestyle='--', alpha=0.5)
-    ax2.set_title('Disparate Impact', fontweight='bold')
-    ax2.set_ylabel('Ratio')
-    ax2.grid(True, alpha=0.3, axis='y')
+    di_values = list(metrics.disparate_impact.values())
+    di_labels = list(metrics.disparate_impact.keys())
     
-    # 3. Equalized Odds
+    # Color bars based on whether they meet 80% rule
+    colors = [PALETTE_MAIN[2] if 0.8 <= v <= 1.25 else PALETTE_MAIN[3] for v in di_values]
+    bars2 = ax2.bar(di_labels, di_values, color=colors, alpha=0.85, 
+                    edgecolor='white', linewidth=2)
+    
+    # Add value labels
+    for bar, val in zip(bars2, di_values):
+        ax2.text(bar.get_x() + bar.get_width()/2., val + 0.05,
+                f'{val:.2f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    ax2.axhline(y=1, color='gray', linestyle='--', alpha=0.5, linewidth=2, label='Perfect Parity')
+    ax2.axhline(y=0.8, color='red', linestyle=':', alpha=0.5, linewidth=1.5, label='80% Rule')
+    ax2.set_title('Disparate Impact', fontweight='bold', fontsize=14, pad=15)
+    ax2.set_ylabel('Ratio', fontweight='bold')
+    ax2.set_xlabel(f'{feature_name if feature_name else "Group"}', fontweight='bold')
+    ax2.legend(loc='upper right', frameon=True, fancybox=True, shadow=True)
+    ax2.grid(True, alpha=0.2, linestyle='--')
+    
+    # 3. Equalized Odds with data labels
     ax3 = fig.add_subplot(gs[1, 0])
     eq_odds_data = pd.DataFrame(metrics.equalized_odds).T
-    eq_odds_data.plot(kind='bar', ax=ax3, width=0.8)
-    ax3.set_title('Equalized Odds (TPR and FPR)', fontweight='bold')
-    ax3.set_ylabel('Rate')
-    ax3.legend(title='Metrics')
-    ax3.grid(True, alpha=0.3, axis='y')
     
-    # 4. Calibration Parity
+    # Create grouped bars
+    x_pos = np.arange(len(eq_odds_data.index))
+    width = 0.35
+    
+    bars_tpr = ax3.bar(x_pos - width/2, eq_odds_data['TPR'], width, 
+                       label='TPR', color=PALETTE_MAIN[0], alpha=0.85,
+                       edgecolor='white', linewidth=2)
+    bars_fpr = ax3.bar(x_pos + width/2, eq_odds_data['FPR'], width,
+                       label='FPR', color=PALETTE_MAIN[1], alpha=0.85,
+                       edgecolor='white', linewidth=2)
+    
+    # Add value labels
+    for bar, val in zip(bars_tpr, eq_odds_data['TPR']):
+        if not np.isnan(val):
+            ax3.text(bar.get_x() + bar.get_width()/2., val + 0.01,
+                    f'{val:.2f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    for bar, val in zip(bars_fpr, eq_odds_data['FPR']):
+        if not np.isnan(val):
+            ax3.text(bar.get_x() + bar.get_width()/2., val + 0.01,
+                    f'{val:.2f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
+    ax3.set_title('Equalized Odds (TPR and FPR)', fontweight='bold', fontsize=14, pad=15)
+    ax3.set_ylabel('Rate', fontweight='bold')
+    ax3.set_xlabel(f'{feature_name if feature_name else "Group"}', fontweight='bold')
+    ax3.set_xticks(x_pos)
+    ax3.set_xticklabels(eq_odds_data.index)
+    ax3.legend(frameon=True, fancybox=True, shadow=True)
+    ax3.grid(True, alpha=0.2, linestyle='--')
+    
+    # 4. Calibration Parity with data labels
     ax4 = fig.add_subplot(gs[1, 1])
     calib_data = pd.DataFrame(metrics.calibration_parity).T
-    calib_data.plot(kind='bar', ax=ax4, width=0.8)
-    ax4.set_title('Calibration Parity', fontweight='bold')
-    ax4.set_ylabel('Value')
-    ax4.legend(title='Metrics')
-    ax4.grid(True, alpha=0.3, axis='y')
     
-    # 5. Summary Statistics
+    # Create grouped bars
+    x_pos = np.arange(len(calib_data.index))
+    width = 0.35
+    
+    bars_ppv = ax4.bar(x_pos - width/2, calib_data['PPV'], width,
+                       label='PPV', color=PALETTE_CONTRAST[1], alpha=0.85,
+                       edgecolor='white', linewidth=2)
+    bars_npv = ax4.bar(x_pos + width/2, calib_data['NPV'], width,
+                       label='NPV', color=PALETTE_CONTRAST[2], alpha=0.85,
+                       edgecolor='white', linewidth=2)
+    
+    # Add value labels
+    for bar, val in zip(bars_ppv, calib_data['PPV']):
+        if not np.isnan(val):
+            ax4.text(bar.get_x() + bar.get_width()/2., val + 0.01,
+                    f'{val:.2f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    for bar, val in zip(bars_npv, calib_data['NPV']):
+        if not np.isnan(val):
+            ax4.text(bar.get_x() + bar.get_width()/2., val + 0.01,
+                    f'{val:.2f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
+    ax4.set_title('Calibration Parity', fontweight='bold', fontsize=14, pad=15)
+    ax4.set_ylabel('Value', fontweight='bold')
+    ax4.set_xlabel(f'{feature_name if feature_name else "Group"}', fontweight='bold')
+    ax4.set_xticks(x_pos)
+    ax4.set_xticklabels(calib_data.index)
+    ax4.legend(frameon=True, fancybox=True, shadow=True)
+    ax4.grid(True, alpha=0.2, linestyle='--')
+    
+    # 5. Enhanced Summary Statistics Table
     ax5 = fig.add_subplot(gs[2, :])
     
     # Create summary table
@@ -598,39 +594,50 @@ def create_fairness_dashboard(y_true: np.ndarray, y_pred: np.ndarray,
     for group in groups:
         row = {
             'Group': group,
-            'Sample Size': np.sum(sensitive_features == group),
-            'Actual Positive Rate': np.mean(y_true[sensitive_features == group]),
-            'Predicted Positive Rate': metrics.demographic_parity[group],
-            'TPR': metrics.equalized_odds[group]['TPR'],
-            'FPR': metrics.equalized_odds[group]['FPR'],
-            'PPV': metrics.calibration_parity[group]['PPV'],
-            'Disparate Impact': metrics.disparate_impact[group]
+            'N': np.sum(sensitive_features == group),
+            'Actual +Rate': f"{np.mean(y_true[sensitive_features == group]):.1%}",
+            'Pred +Rate': f"{metrics.demographic_parity[group]:.1%}",
+            'TPR': f"{metrics.equalized_odds[group]['TPR']:.1%}",
+            'FPR': f"{metrics.equalized_odds[group]['FPR']:.1%}",
+            'PPV': f"{metrics.calibration_parity[group]['PPV']:.1%}",
+            'DI': f"{metrics.disparate_impact[group]:.2f}"
         }
         summary_data.append(row)
     
     summary_df = pd.DataFrame(summary_data)
     
-    # Create table
-    table = ax5.table(cellText=summary_df.round(3).values,
+    # Create styled table
+    table = ax5.table(cellText=summary_df.values,
                      colLabels=summary_df.columns,
                      cellLoc='center',
-                     loc='center')
+                     loc='center',
+                     colWidths=[0.1, 0.08, 0.12, 0.12, 0.1, 0.1, 0.1, 0.1])
     
     table.auto_set_font_size(False)
-    table.set_fontsize(10)
-    table.scale(1.2, 1.5)
+    table.set_fontsize(11)
+    table.scale(1.2, 2.0)
     
-    # Style the table
+    # Style the header with gradient color
     for i in range(len(summary_df.columns)):
-        table[(0, i)].set_facecolor('#40466e')
+        table[(0, i)].set_facecolor(PALETTE_MAIN[0])
         table[(0, i)].set_text_props(weight='bold', color='white')
     
+    # Alternate row colors for better readability
+    for i in range(1, len(summary_df) + 1):
+        for j in range(len(summary_df.columns)):
+            if i % 2 == 0:
+                table[(i, j)].set_facecolor('#F5F5F5')
+            else:
+                table[(i, j)].set_facecolor('white')
+    
     ax5.axis('off')
-    ax5.set_title('Summary Statistics by Group', fontweight='bold', pad=20)
+    ax5.set_title('Summary Statistics by Group', fontweight='bold', fontsize=14, pad=20)
     
-    plt.suptitle('Fairness Metrics Dashboard', fontsize=20, fontweight='bold')
+    # Main title
+    title = 'Fairness Metrics Dashboard'
+    if feature_name:
+        title = f'Fairness Metrics Dashboard - {feature_name}'
+    plt.suptitle(title, fontsize=18, fontweight='bold', y=0.98)
     
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
-    return fig
+    plt.tight_layout()
+    return figure_to_base64(fig)
