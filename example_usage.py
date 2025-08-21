@@ -3,7 +3,8 @@
 Example usage of the Fairness Toolkit package.
 
 This script demonstrates how to use the fairness toolkit to evaluate
-and visualize fairness metrics for a binary classification model.
+and visualize fairness metrics for a binary classification model with
+interactive HTML reports and embedded visualizations.
 """
 
 import numpy as np
@@ -12,18 +13,18 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 
-# Import fairness toolkit
-from fairness_toolkit import (
-    calculate_all_metrics,
+# Import fairness toolkit components
+from fairness_toolkit.metrics import calculate_all_metrics, calculate_metrics_for_multiple_features
+from fairness_toolkit.reporting.interactive_fairness_report import generate_interactive_fairness_report
+from fairness_toolkit.visualization.fairness_plots import (
+    plot_group_distributions,
     create_fairness_dashboard,
-    generate_fairness_report,
-    plot_fairness_metrics,
-    plot_group_distributions
+    plot_heatmap
 )
 
 
 def create_synthetic_data(n_samples=1000, random_state=42):
-    """Create synthetic data with a sensitive attribute."""
+    """Create synthetic data with multiple sensitive attributes."""
     np.random.seed(random_state)
     
     # Create features and target
@@ -37,36 +38,69 @@ def create_synthetic_data(n_samples=1000, random_state=42):
         random_state=random_state
     )
     
-    # Create sensitive attribute (e.g., simulating two demographic groups)
-    # Make it somewhat correlated with features to create potential bias
-    sensitive_features = np.where(
-        X[:, 0] + np.random.normal(0, 0.5, n_samples) > 0,
-        'Group A',
-        'Group B'
+    # Create multiple sensitive attributes
+    # Race (correlated with feature 0)
+    race = np.where(
+        X[:, 0] + np.random.normal(0, 0.5, n_samples) > 0.5,
+        'White',
+        np.where(
+            X[:, 0] + np.random.normal(0, 0.5, n_samples) > -0.5,
+            'Black',
+            'Hispanic'
+        )
     )
     
-    return X, y, sensitive_features
+    # Sex (correlated with feature 1)
+    sex = np.where(
+        X[:, 1] + np.random.normal(0, 0.5, n_samples) > 0,
+        'Male',
+        'Female'
+    )
+    
+    # Age group (based on feature 2)
+    age_values = X[:, 2] + np.random.normal(0, 0.5, n_samples)
+    age = np.where(
+        age_values > 0.5,
+        'Senior',
+        np.where(
+            age_values > -0.5,
+            'Middle',
+            'Young'
+        )
+    )
+    
+    return X, y, race, sex, age
 
 
 def main():
-    print("Fairness Toolkit Example Usage")
-    print("=" * 50)
+    print("🚀 Fairness Toolkit Example Usage (Latest Version)")
+    print("=" * 60)
+    print("Demonstrating interactive reports with embedded visualizations")
+    print("=" * 60)
     
     # 1. Create synthetic data
-    print("\n1. Creating synthetic dataset...")
-    X, y, sensitive_features = create_synthetic_data(n_samples=2000)
+    print("\n📊 STEP 1: Creating synthetic dataset...")
+    X, y, race, sex, age = create_synthetic_data(n_samples=2000)
     
     # Split data
-    X_train, X_test, y_train, y_test, sf_train, sf_test = train_test_split(
-        X, y, sensitive_features, test_size=0.3, random_state=42, stratify=y
+    (X_train, X_test, y_train, y_test, 
+     race_train, race_test, 
+     sex_train, sex_test,
+     age_train, age_test) = train_test_split(
+        X, y, race, sex, age, 
+        test_size=0.3, 
+        random_state=42, 
+        stratify=y
     )
     
-    print(f"   - Training samples: {len(X_train)}")
-    print(f"   - Test samples: {len(X_test)}")
-    print(f"   - Groups: {np.unique(sensitive_features)}")
+    print(f"   • Training samples: {len(X_train)}")
+    print(f"   • Test samples: {len(X_test)}")
+    print(f"   • Race groups: {np.unique(race)}")
+    print(f"   • Sex groups: {np.unique(sex)}")
+    print(f"   • Age groups: {np.unique(age)}")
     
     # 2. Train a model
-    print("\n2. Training Random Forest classifier...")
+    print("\n🤖 STEP 2: Training Random Forest classifier...")
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
@@ -79,117 +113,264 @@ def main():
     y_prob = model.predict_proba(X_test_scaled)[:, 1]
     
     accuracy = np.mean(y_test == y_pred)
-    print(f"   - Overall accuracy: {accuracy:.3f}")
+    print(f"   • Overall accuracy: {accuracy:.3f}")
     
-    # 3. Calculate fairness metrics
-    print("\n3. Calculating fairness metrics...")
-    metrics = calculate_all_metrics(y_test, y_pred, sf_test, y_prob)
+    # 3. Calculate fairness metrics for individual features
+    print("\n📈 STEP 3: Calculating fairness metrics...")
     
-    # Display key metrics
-    print("\n   Demographic Parity (positive prediction rates):")
-    for group, rate in metrics.demographic_parity.items():
-        print(f"   - {group}: {rate:.3f}")
+    # Single feature analysis
+    race_metrics = calculate_all_metrics(y_test, y_pred, race_test, y_prob)
     
-    print("\n   Equal Opportunity (true positive rates):")
-    for group, rate in metrics.equal_opportunity.items():
-        if not np.isnan(rate):
-            print(f"   - {group}: {rate:.3f}")
+    print("\n   Race - Demographic Parity:")
+    for group, rate in race_metrics.demographic_parity.items():
+        print(f"      • {group}: {rate:.3f}")
     
-    print("\n   Disparate Impact ratios:")
-    for group, ratio in metrics.disparate_impact.items():
+    print("\n   Race - Disparate Impact:")
+    for group, ratio in race_metrics.disparate_impact.items():
         if not np.isnan(ratio):
-            status = "Fair" if 0.8 <= ratio <= 1.25 else "Potential Bias"
-            print(f"   - {group}: {ratio:.3f} ({status})")
+            status = "✅ Fair" if 0.8 <= ratio <= 1.25 else "⚠️ Potential Bias"
+            print(f"      • {group}: {ratio:.3f} ({status})")
     
-    # 4. Create visualizations
-    print("\n4. Creating visualizations...")
+    # 4. Generate individual visualizations (returns base64 embedded images)
+    print("\n🎨 STEP 4: Creating embedded visualizations...")
     
-    # Create fairness dashboard
-    dashboard_fig = create_fairness_dashboard(
-        y_test, y_pred, sf_test, y_prob,
-        metrics=metrics,
-        save_path='example_fairness_dashboard.png'
+    # Create group distributions plot (returns base64 string)
+    distributions_plot = plot_group_distributions(
+        y_test, y_pred, race_test, y_prob, 
+        feature_name='Race'
     )
-    print("   - Saved dashboard to: example_fairness_dashboard.png")
+    print(f"   • Group distributions plot generated ({len(distributions_plot):,} chars)")
     
-    # Create individual plots
-    plot_fairness_metrics(
-        metrics.demographic_parity,
-        metric_name="Demographic Parity",
-        save_path='example_demographic_parity.png'
+    # Create fairness dashboard (returns base64 string)
+    dashboard_plot = create_fairness_dashboard(
+        y_test, y_pred, race_test, y_prob,
+        metrics=race_metrics,
+        feature_name='Race'
     )
-    print("   - Saved demographic parity plot to: example_demographic_parity.png")
+    print(f"   • Fairness dashboard generated ({len(dashboard_plot):,} chars)")
     
-    plot_group_distributions(
-        y_test, y_pred, sf_test, y_prob,
-        save_path='example_distributions.png'
+    # 5. Generate comprehensive interactive report
+    print("\n📝 STEP 5: Generating interactive fairness report...")
+    
+    # Prepare sensitive features dictionary
+    sensitive_features_dict = {
+        'race': race_test,
+        'sex': sex_test,
+        'age': age_test
+    }
+    
+    # Define privileged groups (optional)
+    privileged_groups = {
+        'race': 'White',
+        'sex': 'Male',
+        'age': 'Middle'
+    }
+    
+    # Generate the interactive report
+    report_data = generate_interactive_fairness_report(
+        y_true=y_test,
+        y_pred=y_pred,
+        sensitive_features_dict=sensitive_features_dict,
+        y_prob=y_prob,
+        output_path='example_interactive_report.html',
+        privileged_groups=privileged_groups
     )
-    print("   - Saved distributions plot to: example_distributions.png")
     
-    # 5. Generate comprehensive report
-    print("\n5. Generating fairness report...")
-    report_data = generate_fairness_report(
-        y_test, y_pred, sf_test, y_prob,
-        output_path='example_fairness_report.html',
-        include_plots=True
+    print("   ✅ Interactive HTML report generated!")
+    print(f"   • Report saved to: example_interactive_report.html")
+    print(f"   • Features analyzed: {len(report_data['feature_stats'])}")
+    
+    # Display fairness scores
+    print("\n   📊 Fairness Scores by Feature:")
+    for feature, stats in report_data['feature_stats'].items():
+        print(f"      • {feature}: {stats['fairness_score']}% ({stats['num_groups']} groups)")
+    
+    # 6. Create a multi-feature heatmap
+    print("\n🗺️ STEP 6: Creating fairness heatmap...")
+    
+    # Calculate metrics for all features
+    multi_metrics = calculate_metrics_for_multiple_features(
+        y_test, y_pred, sensitive_features_dict, y_prob, privileged_groups
     )
     
-    print("   - Saved HTML report to: example_fairness_report.html")
-    print(f"   - Overall fairness score: {report_data['fairness_score']}%")
+    # Prepare data for heatmap
+    features = list(sensitive_features_dict.keys())
+    metric_names = ['demographic parity', 'equalized odds', 'calibration parity', 'disparate impact']
     
-    # 6. Display recommendations
-    print("\n6. Fairness Improvement Recommendations:")
-    for rec in report_data['recommendations']:
-        print(f"\n   {rec['title']}:")
-        print(f"   {rec['description']}")
-        for action in rec['actions'][:3]:  # Show first 3 actions
-            print(f"   • {action}")
+    # Calculate fairness scores for heatmap
+    fairness_scores = {}
+    for feature in features:
+        metrics = multi_metrics.metrics_by_feature[feature]
+        # Simple scoring: closer to perfect fairness = higher score
+        scores = []
+        
+        # Demographic parity score
+        dp_values = list(metrics.demographic_parity.values())
+        dp_score = 1 - (max(dp_values) - min(dp_values)) if len(dp_values) > 1 else 1.0
+        scores.append(max(0, min(1, dp_score)))
+        
+        # Equalized odds score (average of TPR and FPR fairness)
+        tpr_values = [v['TPR'] for v in metrics.equalized_odds.values() if not np.isnan(v['TPR'])]
+        fpr_values = [v['FPR'] for v in metrics.equalized_odds.values() if not np.isnan(v['FPR'])]
+        tpr_score = 1 - (max(tpr_values) - min(tpr_values)) if len(tpr_values) > 1 else 1.0
+        fpr_score = 1 - (max(fpr_values) - min(fpr_values)) if len(fpr_values) > 1 else 1.0
+        scores.append(max(0, min(1, (tpr_score + fpr_score) / 2)))
+        
+        # Calibration parity score
+        ppv_values = [v['PPV'] for v in metrics.calibration_parity.values() if not np.isnan(v['PPV'])]
+        calib_score = 1 - (max(ppv_values) - min(ppv_values)) if len(ppv_values) > 1 else 1.0
+        scores.append(max(0, min(1, calib_score)))
+        
+        # Disparate impact score
+        di_values = [v for v in metrics.disparate_impact.values() if not np.isnan(v)]
+        di_score = min([min(v, 1/v) for v in di_values]) if di_values else 1.0
+        scores.append(max(0, min(1, di_score)))
+        
+        fairness_scores[feature] = scores
     
-    print("\n" + "=" * 50)
-    print("Example completed! Check the generated files for detailed results.")
+    # Create heatmap (returns base64 string)
+    heatmap_plot = plot_heatmap(
+        features=features,
+        metrics=metric_names,
+        fairness_scores=fairness_scores
+    )
+    print(f"   • Heatmap generated ({len(heatmap_plot):,} chars)")
     
+    # 7. Create a simple HTML showcase
+    print("\n💾 STEP 7: Creating showcase HTML...")
+    
+    showcase_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fairness Toolkit Showcase</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }}
+        .container {{ background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        h1 {{ color: #5A6C7D; border-bottom: 3px solid #5A6C7D; padding-bottom: 10px; }}
+        h2 {{ color: #6C757D; margin-top: 30px; }}
+        .plot {{ margin: 20px 0; text-align: center; }}
+        img {{ max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 5px; }}
+        .metric {{ background-color: #f9f9f9; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #5A6C7D; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Fairness Toolkit - Embedded Visualizations Showcase</h1>
+        
+        <div class="metric">
+            <strong>Dataset:</strong> {len(y_test)} samples<br>
+            <strong>Accuracy:</strong> {accuracy:.3f}<br>
+            <strong>Features Analyzed:</strong> Race, Sex, Age
+        </div>
+        
+        <div class="plot">
+            <h2>Group Distributions by Race</h2>
+            <img src="{distributions_plot}" alt="Group Distributions">
+        </div>
+        
+        <div class="plot">
+            <h2>Fairness Dashboard for Race</h2>
+            <img src="{dashboard_plot}" alt="Fairness Dashboard">
+        </div>
+        
+        <div class="plot">
+            <h2>Multi-Feature Fairness Heatmap</h2>
+            <img src="{heatmap_plot}" alt="Fairness Heatmap">
+        </div>
+        
+        <div class="metric">
+            <h2>Key Features</h2>
+            ✅ All visualizations embedded as base64 data<br>
+            ✅ Single self-contained HTML file<br>
+            ✅ Professional color schemes<br>
+            ✅ Data labels on all charts<br>
+            ✅ No external dependencies
+        </div>
+    </div>
+</body>
+</html>
+    """
+    
+    with open("example_showcase.html", "w") as f:
+        f.write(showcase_html)
+    
+    print("   • Showcase saved to: example_showcase.html")
+    
+    # Summary
+    print("\n" + "=" * 60)
+    print("✅ EXAMPLE COMPLETED SUCCESSFULLY!")
+    print("=" * 60)
+    print("\n📁 Generated Files:")
+    print("   1. example_interactive_report.html - Full interactive report")
+    print("   2. example_showcase.html - Showcase of embedded visualizations")
+    print("\n🌟 Key Features Demonstrated:")
+    print("   • Interactive reports with multiple sensitive features")
+    print("   • Embedded visualizations (no external files)")
+    print("   • Professional color schemes and data labels")
+    print("   • Self-contained, shareable HTML files")
+    print("\n💡 Open the HTML files in your browser to explore the results!")
+    print("=" * 60)
 
-def demonstrate_different_scenarios():
-    """Demonstrate the toolkit with different bias scenarios."""
-    print("\n\nDemonstrating Different Bias Scenarios")
-    print("=" * 50)
+
+def demonstrate_api_usage():
+    """Demonstrate programmatic API usage."""
+    print("\n\n📚 API Usage Examples")
+    print("=" * 60)
     
-    # Scenario 1: High bias
-    print("\n[Scenario 1] Model with high bias:")
-    np.random.seed(123)
-    n = 500
+    # Quick example data
+    np.random.seed(42)
+    n = 100
     y_true = np.random.binomial(1, 0.5, n)
-    sensitive = np.random.choice(['A', 'B'], n)
+    y_pred = np.random.binomial(1, 0.5, n)
+    y_prob = np.random.uniform(0, 1, n)
+    groups = np.random.choice(['A', 'B', 'C'], n)
     
-    # Create biased predictions
-    y_pred = y_true.copy()
-    # Flip more predictions for group B
-    group_b_mask = sensitive == 'B'
-    flip_mask = np.random.random(n) < 0.3
-    y_pred[group_b_mask & flip_mask] = 1 - y_pred[group_b_mask & flip_mask]
+    print("\n1️⃣ Single Feature Analysis:")
+    print("```python")
+    print("from fairness_toolkit.metrics import calculate_all_metrics")
+    print("")
+    print("metrics = calculate_all_metrics(y_true, y_pred, groups, y_prob)")
+    print("print(metrics.demographic_parity)")
+    print("print(metrics.disparate_impact)")
+    print("```")
     
-    metrics = calculate_all_metrics(y_true, y_pred, sensitive)
-    print(f"  Demographic Parity - Group A: {metrics.demographic_parity['A']:.3f}")
-    print(f"  Demographic Parity - Group B: {metrics.demographic_parity['B']:.3f}")
-    print(f"  Disparate Impact - Group B: {metrics.disparate_impact['B']:.3f}")
+    metrics = calculate_all_metrics(y_true, y_pred, groups, y_prob)
+    print(f"\nResult: {metrics.demographic_parity}")
     
-    # Scenario 2: Fair model
-    print("\n[Scenario 2] Fair model:")
-    np.random.seed(456)
-    y_true = np.random.binomial(1, 0.5, n)
-    sensitive = np.random.choice(['A', 'B'], n)
+    print("\n2️⃣ Multiple Features Analysis:")
+    print("```python")
+    print("from fairness_toolkit.reporting.interactive_fairness_report import (")
+    print("    generate_interactive_fairness_report")
+    print(")")
+    print("")
+    print("sensitive_features_dict = {")
+    print("    'feature1': array1,")
+    print("    'feature2': array2")
+    print("}")
+    print("")
+    print("report = generate_interactive_fairness_report(")
+    print("    y_true, y_pred, sensitive_features_dict, y_prob")
+    print(")")
+    print("```")
     
-    # Create fair predictions with similar error rates
-    y_pred = y_true.copy()
-    flip_mask = np.random.random(n) < 0.1  # 10% error rate for all
-    y_pred[flip_mask] = 1 - y_pred[flip_mask]
-    
-    metrics = calculate_all_metrics(y_true, y_pred, sensitive)
-    print(f"  Demographic Parity - Group A: {metrics.demographic_parity['A']:.3f}")
-    print(f"  Demographic Parity - Group B: {metrics.demographic_parity['B']:.3f}")
-    print(f"  Disparate Impact - Group B: {metrics.disparate_impact['B']:.3f}")
+    print("\n3️⃣ Individual Visualizations (Base64):")
+    print("```python")
+    print("from fairness_toolkit.visualization.fairness_plots import (")
+    print("    plot_group_distributions,")
+    print("    create_fairness_dashboard")
+    print(")")
+    print("")
+    print("# Returns base64 encoded image string")
+    print("plot_base64 = plot_group_distributions(")
+    print("    y_true, y_pred, groups, y_prob")
+    print(")")
+    print("")
+    print("# Embed in HTML")
+    print('html = f\'<img src="{plot_base64}">\'')
+    print("```")
 
 
 if __name__ == "__main__":
     main()
-    demonstrate_different_scenarios()
+    demonstrate_api_usage()
