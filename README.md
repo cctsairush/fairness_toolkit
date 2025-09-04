@@ -1,12 +1,12 @@
 # Fairness Toolkit
 
-A comprehensive Python toolkit for evaluating machine learning model fairness across different demographic groups with interactive visualizations.
+A comprehensive Python toolkit for evaluating machine learning model fairness across different demographic groups.
 
 ## Features
 
 - **Interactive HTML Reports**: Generate comprehensive, self-contained HTML reports with embedded visualizations
 - **Multiple Fairness Metrics**: Evaluate demographic parity, equalized odds, calibration parity, and disparate impact
-- **Easy Sharing**: Single HTML file can be shared via email or messaging
+- **Metric Selection**: See section below on choosing the appropriate fairness metrics with healthcare examples. 
 
 ## Installation
 
@@ -116,16 +116,22 @@ The interactive HTML reports include:
 - **Calibration Parity**: Equal predictive values across groups  
 - **Disparate Impact**: 80% rule compliance testing
 
-### Interactive Visualizations
-- Group distribution comparisons
-- Classification metrics by group
-- Fairness dashboard with data labels
-- Embedded charts (no external files)
+### Choosing the Right Fairness Metric
 
-### Technical Analysis
-- Heatmap showing fairness scores across features and metrics
-- Color-coded from red (0.8 - poor) to green (1.0 - perfect)
-- Professional gradient colors for better contrast
+Selecting an appropriate fairness metric depends on your specific healthcare application and ethical priorities. Here's a decision flow to guide your choice:
+
+**Start here:** What is your model predicting?
+- **Resource allocation** (e.g., ICU bed assignment, organ transplant priority) → Consider **Demographic Parity** to ensure equal access rates across groups. This prevents systematic exclusion of certain populations from critical resources.
+- **Risk prediction requiring accuracy** (e.g., disease diagnosis, mortality risk) → Choose **Equalized Odds** to maintain both equal true positive rates (sensitivity) and false positive rates across groups. This ensures no group systematically misses diagnoses or receives unnecessary interventions.
+- **Probability-based decisions** (e.g., readmission risk scores, treatment response likelihood) → Use **Calibration Parity** to ensure predicted probabilities mean the same thing across groups. A 70% risk should represent the same actual risk regardless of patient demographics.
+- **Legal compliance or screening** (e.g., insurance eligibility, clinical trial enrollment) → Apply **Disparate Impact** (80% rule) as it aligns with legal standards and ensures selection rates don't disproportionately exclude protected groups.
+
+**Additional considerations:**
+- If false negatives are catastrophic (missing cancer diagnosis) → Prioritize **Equalized Odds** with focus on TPR equality
+- If false positives are harmful (unnecessary surgery recommendations) → Prioritize **Equalized Odds** with focus on FPR equality
+- If maintaining trust across communities is critical → **Demographic Parity** shows equal treatment at face value
+- If decisions involve thresholds or cutoffs → **Calibration Parity** ensures fair threshold application
+
 
 ### Recommendations
 - Actionable improvement suggestions
